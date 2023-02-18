@@ -18,7 +18,7 @@ md"# Load Packages"
 # ╔═╡ 45dabf95-ede9-46c5-896c-39945a2029e7
 begin
 	FFTW.forget_wisdom()
-	FFTW.set_num_threads(8)
+	FFTW.set_num_threads(4)
 end
 
 # ╔═╡ 83d8201f-6c96-4849-871b-99409abfc5f8
@@ -27,100 +27,81 @@ TableOfContents()
 # ╔═╡ d0e12818-286b-475d-b76b-da777073e72a
 md"# Some Utility Functions"
 
-# ╔═╡ 17303de4-932a-4c0d-866c-7ac7ee60318d
- ⊠(arr, s) = select_region(arr, new_size=round.(Int, s .* size(arr)))
-
 # ╔═╡ c7a3f80b-b4df-4efd-a593-2d7bb511b053
 begin
-	"""
-	    simshow(arr; set_one=false, set_zero=false,
-	                f=nothing, γ=1)
-	Displays a real valued array . Brightness encodes magnitude.
-	Works within Jupyter and Pluto.
-	# Keyword args
-	The transforms are applied in that order.
-	* `set_zero=false` subtracts the minimum to set minimum to 1
-	* `set_one=false` divides by the maximum to set maximum to 1
-	* `f` applies an arbitrary function to the abs array
-	* `γ` applies a gamma correction to the abs 
-	* `cmap=:gray` applies a colormap provided by ColorSchemes.jl. If `cmap=:gray` simply `Colors.Gray` is used
-	    and with different colormaps the result is an `Colors.RGB` element type
-	"""
-	function simshow(arr::AbstractArray{<:Real}; 
-	                 set_one=true, set_zero=false,
-	                 f = nothing,
-	                 γ = 1,
-	                 cmap=:gray)
-	    arr = set_zero ? arr .- minimum(arr) : arr
 	
-	    if set_one
-	        m = maximum(arr)
-	        if !iszero(m)
-	            arr = arr ./ maximum(arr)
-	        end
-	    end
-	
-	    arr = isnothing(f) ? arr : f(arr)
-	
-	    if !isone(γ)
-	        arr = arr .^ γ
-	    end
-	
-	
-	    if cmap == :gray
-	        Gray.(arr)
-	    else
-	        get(colorschemes[cmap], arr)
-	    end
-	end
-	
-	
-	"""
-	    simshow(arr)
-	Displays a complex array. Color encodes phase, brightness encodes magnitude.
-	Works within Jupyter and Pluto.
-	# Keyword args
-	The transforms are applied in that order.
-	* `f` applies a function `f` to the array.
-	* `absf` applies a function `absf` to the absolute of the array
-	* `absγ` applies a gamma correction to the abs 
-	"""
-	function simshow(arr::AbstractArray{T};
-	                 f=nothing,
-	                 absγ=1,
-	                 absf=nothing) where (T<:Complex)
-	
-	    if !isnothing(f)
-	        arr = f(arr)
-	    end
-	
-	    Tr = real(T)
-	    # scale abs to 1
-	    absarr = abs.(arr)
-	    absarr ./= maximum(absarr)
-	
-	    if !isnothing(absf)
-	        absarr .= absf(absarr)
-	    end
-	    
-	    if !isone(absγ)
-	        absarr .= absarr .^ absγ
-	    end
-	
-	    angarr = angle.(arr) ./ Tr(2pi) * 360 
-	
-	    HSV.(angarr, one(Tr), absarr)
-	end
-	
-	
-	
-	"""
-	    simshow(arr::AbstractArray{<:Colors.ColorTypes.Colorant})
-	If `simshow` receives an array which already contains color information, just display it.
-	"""
-	function simshow(arr::AbstractArray{<:Colors.ColorTypes.Colorant})
-	    return arr
-	end
+"""
+    simshow(arr; set_zero=false, set_one=false, γ=1, cmap=:gray)
+Displays a real valued array.
+Works within Jupyter and Pluto.
+# Keyword args
+The transforms are applied in that order.
+* `set_zero=false` subtracts the minimum to set minimum to 0
+* `set_one=true` divides by the maximum to set maximum to 1
+* `γ` applies a gamma correction
+* `cmap=:gray` applies a colormap provided by ColorSchemes.jl. If `cmap=:gray` simply `Colors.Gray` is used
+    and with different colormaps the result is an `Colors.RGB` element type.  
+    You can try `:jet`, `:deep`, `thermal` or different ones by reading the catalogue of ColorSchemes.jl
+"""
+function simshow(arr::AbstractArray{T};
+                 set_zero=false, set_one=true,
+                 γ = one(T),
+                 cmap=:gray) where {T<:Real}
+
+    arr = set_zero ? arr .- minimum(arr) : arr
+
+    if set_one
+        m = maximum(arr)
+        if !iszero(m)
+            arr = arr ./ maximum(arr)
+        end
+    end
+
+    if !isone(γ)
+        arr = arr .^ γ
+    end
+
+    if cmap == :gray
+        Gray.(arr)
+    else
+        get(colorschemes[cmap], arr)
+    end
+end
+
+
+"""
+    simshow(arr; γ=1)
+Displays a complex array. Color encodes phase, brightness encodes magnitude.
+Works within Jupyter and Pluto.
+# Keyword args
+* `γ` applies a gamma correction to the magnitude
+"""
+function simshow(arr::AbstractArray{T};
+                 γ=one(T), kwargs...) where (T<:Complex)
+
+    Tr = real(T)
+    # scale abs to 1
+    absarr = abs.(arr)
+    absarr ./= maximum(absarr)
+
+    if !isone(γ)
+        absarr .= absarr .^ γ
+    end
+
+    angarr = angle.(arr) ./ Tr(2pi) * Tr(360)
+
+    HSV.(angarr, one(Tr), absarr)
+end
+
+
+"""
+    simshow(arr::AbstractArray{<:Colors.ColorTypes.Colorant})
+If `simshow` receives an array which already contains color information, just display it.
+In that case, no keywords argument are applied.
+"""
+function simshow(arr::AbstractArray{<:Colors.ColorTypes.Colorant})
+    return arr
+end
 	
 end
 
@@ -158,10 +139,10 @@ N = 512
 y = fftpos(L, N, NDTools.CenterFT)
 
 # ╔═╡ d58452cc-d4b7-4d6f-9c39-fd8329291cdd
-D_circ = N / 4
+D_circ = N / 2
 
 # ╔═╡ 5611f23e-8513-4c6d-b2d5-b092bdff21ed
-U_circ = ComplexF64.(rr((N, N)) .<D_circ) .* exp.(1im .* 2π ./ λ .* y .* sind(60)) .+ ComplexF64.(rr((N, N)) .< D_circ ) .* exp.(1im .* 2π ./ λ .* y' .* sind(-60))
+U_circ = ComplexF64.(rr((N, N)) .< D_circ / 2) .* exp.(1im .* 2π ./ λ .* y .* sind(60)) .+ ComplexF64.(rr((N, N)) .< D_circ / 2) .* exp.(1im .* 2π ./ λ .* y' .* sind(-60))
 
 # ╔═╡ 694b3ac0-51e2-46b4-a5ce-8b1a93d6a368
 M = 2
@@ -292,7 +273,7 @@ function fresnel(field::Matrix{T}, z, λ, L; skip_final_phase=true) where T
 	field_out .*= 1 / (1im * T(sqrt(length(field_out)))) 
 	
 	# transfer function kernel of angular spectrum
-	return field_out, (; Q, H₁, H₂)
+	return field_out, (; L=Q, H₁, H₂)
 end
 
 # ╔═╡ 4db3a990-4e5d-4fe7-89cc-4823d1b5b592
@@ -301,7 +282,7 @@ end
 
 Returns the the electrical field with physical length `L` and wavelength `λ` propagated with the Scaled Angular Spectrum (SAS) of plane waves (AS) by the propagation distance `z`.
 """
-function scaled_angular_spectrum(ψ₀::Matrix{T}, z, λ, L; 
+function scaled_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ; 
 								 pad_factor=2, skip_final_phase=true,  set_pad_zero=false) where {T} 
 	
 	@assert size(ψ₀, 1) == size(ψ₀, 2) "Restricted to auadratic fields."
@@ -310,7 +291,6 @@ function scaled_angular_spectrum(ψ₀::Matrix{T}, z, λ, L;
 	N = size(ψ₀, 1)
 	z_limit = (- 4 * L * sqrt(8*L^2 / N^2 + λ^2) * sqrt(L^2 * inv(8 * L^2 + N^2 * λ^2)) / (λ * (-1+2 * sqrt(2) * sqrt(L^2 * inv(8 * L^2 + N^2 * λ^2)))))
 
-	@show z, z_limit
 	
 	z > z_limit &&  @warn "Propagated field might be affected by vignetting"
 	L_new = pad_factor * L
@@ -382,7 +362,7 @@ end
 z_circ = M / N /λ * L^2 * 2
 
 # ╔═╡ c7194950-26ff-4972-81be-1fabf1ba9dcf
-md"# First Example
+md"# First Example: Circular
 
 In the first example, one straight beam and one oblique beam are passing through a round aperture.
 
@@ -399,19 +379,19 @@ simshow(U_circ)
 as_circ = angular_spectrum(select_region(U_circ, new_size=round.(Int, size(U_circ) .* M)), z_circ, λ, L * M)
 
 # ╔═╡ 3524374c-97f0-4cdd-88cd-7ffbdb52834c
-simshow(as_circ[1], absγ=1)
+simshow(as_circ[1], γ=1)
 
 # ╔═╡ dd434bfd-c14d-4417-922a-01a573c44143
 sft_fr_circ = fresnel(resample(U_circ,size(U_circ).÷2), z_circ, λ, L, skip_final_phase=false)
 
 # ╔═╡ 49c66347-dfdb-462e-84e4-92aaef26891e
-simshow(resample(select_region(sft_fr_circ[1], new_size=(N, N).÷2), (N, N)),absγ=1)
+simshow(resample(select_region(sft_fr_circ[1], new_size=(N, N).÷2), (N, N)))
 
 # ╔═╡ 6af0bc99-4245-44f8-bc45-405f9e56b513
 sas_circ = scaled_angular_spectrum(U_circ, z_circ, λ, L, skip_final_phase=false)
 
 # ╔═╡ d5fdc880-6d6a-4bb1-9167-f16340361897
-simshow(resample(sas_circ[1], M .* (N,N)), absγ=1)
+simshow(resample(sas_circ[1], M .* (N,N)))
 
 # ╔═╡ d623e68d-8cfd-4df8-af30-396097ddc6aa
 L_box = 128e-6;
@@ -438,7 +418,7 @@ M_box = 8;
 z_box = M_box / N_box / λ * L_box^2 * 2
 
 # ╔═╡ 1815437a-332c-4bc1-9b72-b75cd4b8b653
-md"# Second Example
+md"# Second Example: Quadratic
 
 
 The Fresnel number is $(round((D_box)^2 / z_box / λ, digits=3))
@@ -464,6 +444,116 @@ sas_box = scaled_angular_spectrum(U_box, z_box, λ, L_box, skip_final_phase=true
 
 # ╔═╡ 9c46ad96-96ac-4d40-bfec-d146451f1130
 simshow(abs2.(sas_box[1]), γ=0.2)
+
+# ╔═╡ d61dba4b-4391-425e-8ac0-7ea7ae0b60d7
+md"""# Third Example: Gauss Beam
+
+"""
+
+# ╔═╡ 3fb7bb86-0c00-4233-a956-d12a256ab825
+L_gauss = 200e-6;
+
+# ╔═╡ dfe7d9b7-adfa-47ff-8775-48b6e1ee5c79
+N_gauss = 256;
+
+# ╔═╡ f37f012b-ac46-4a4b-a7c4-9f49a9f83787
+y_gauss = fftpos(L_gauss, N_gauss, NDTools.CenterFT);
+
+# ╔═╡ 0712e87c-e2fe-4687-bf95-bda7269d8f8d
+w_0 = 1e-6
+
+# ╔═╡ 549df4a1-460d-42e1-983e-04c4645f2f29
+400e-6 * λ * N_gauss / (200e-6)^2
+
+# ╔═╡ 6937a3c3-d54d-4f88-81d5-6e47413f2363
+function gauss_beam(y, x, w_0, λ, z)
+	k = 2π / λ
+	z_R = π * w_0^2 / λ
+	R(z) = z * (1 + (z_R /z)^2)
+	ψ(z) = atan.(z, z_R)
+	w(z) = w_0 * sqrt(1 + (z / z_R)^2)
+	r2 = x.^2 .+ y.^2
+	ψ(z)
+	return w_0 ./ w.(z) .* exp.(-r2 ./ w.(z).^2) .* exp.(-1im .* (k .* z .+ k .* r2 ./ 2 ./ R.(z)) .- ψ.(z))
+end
+
+# ╔═╡ ec74d3e4-617c-4411-a9ee-442b1b55e5d8
+gb = gauss_beam(y_gauss, y_gauss', w_0, λ, 1e-12);
+
+# ╔═╡ ae199e1a-942a-4d24-b3cf-2881cf97b303
+simshow(gb)
+
+# ╔═╡ aba5af1d-ce3a-4532-8a39-72157b8ff87b
+zs = range(400e-6, 5000e-6, 400)
+
+# ╔═╡ 4e8f6d5e-65e4-42cf-afe4-0abf2d18f04e
+gauss_paraxial = gauss_beam(y_gauss, y_gauss', w_0, λ, reshape(zs, (1,1,length(zs))))
+
+# ╔═╡ c8eb6cfe-c083-44fb-9654-b01ad141e1f8
+simshow(gauss_paraxial[:, 129, :], γ=0.3)
+
+# ╔═╡ b990d60a-fda4-41ba-a6a5-54e353fbb472
+begin
+	gauss_AS = similar(gauss_paraxial)
+	
+	Threads.@threads for i in 1:size(gauss_paraxial, 3)
+		arr, t = angular_spectrum(gb, zs[i], λ, L_gauss)
+		gauss_AS[:,:, i] .= arr
+	end
+end
+
+# ╔═╡ 53b4f405-1405-4f52-9afa-521612dc27a3
+scaled_angular_spectrum(gb, 10e-6, λ, L_gauss, skip_final_phase=false)[2].L
+
+# ╔═╡ 12b128a5-9f0b-4539-b8e2-731bdd4915cd
+function rescale(arr, L, L_ref)
+	sz = size(arr)
+	sz_new = round.(Ref(Int), sz .* L_ref ./ L)
+	arr_new = select_region(arr, new_size=sz_new)
+	arr = resample(arr_new, sz, normalize=false)
+	return arr
+end
+
+# ╔═╡ 9f4eaff2-58b5-4cba-b68c-8313a16f89e4
+begin
+	gauss_axial = similar(gauss_paraxial)
+	
+	
+	Threads.@threads for i in 1:size(gauss_paraxial, 3)
+		arr, t = scaled_angular_spectrum(gb, zs[i], λ, L_gauss, skip_final_phase=false)
+		gauss_axial[:,:, i] .= rescale(arr, t.L, L_gauss)
+	end
+end
+
+# ╔═╡ fd18902e-d7ed-4edf-ab0d-f7f23a205ecf
+begin
+	gauss_FR = similar(gauss_paraxial)
+	
+	Threads.@threads for i in 1:size(gauss_paraxial, 3)
+		arr, t = fresnel(gb, zs[i], λ, L_gauss, skip_final_phase=false)
+		gauss_FR[:,:, i] .= rescale(arr, t.L, L_gauss)
+	end
+end
+
+# ╔═╡ 8d9b7251-8a39-4ec0-aa8f-bcb4c08489dc
+simshow(gauss_axial[:, 129, :], γ=0.1)
+
+# ╔═╡ 41d476ad-9d20-4021-848e-851bf67a8ac1
+begin
+	plot(real.(gauss_paraxial[129, 129, :]), label="Paraxial")
+	plot!(real.(gauss_axial[129, 129, :]), label="SAS")
+	plot!(real.(gauss_AS[129, 129, :]), label="AS")
+	plot!(real.(gauss_FR[129, 129, :]), label="FR")
+end
+
+# ╔═╡ 3b0f3818-bbcf-40b1-a22e-1034f4b4d612
+sum(abs2, gauss_FR, dims=(1,2))
+
+# ╔═╡ bdbdb6d3-497c-42b7-80db-fd6a49480258
+sum(abs2, gauss_AS, dims=(1,2))
+
+# ╔═╡ 0d60a67e-8b35-4032-8237-6c21a402a5c2
+sum(abs2, gauss_axial, dims=(1,2))
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -2056,7 +2146,6 @@ version = "1.4.1+0"
 # ╠═45dabf95-ede9-46c5-896c-39945a2029e7
 # ╠═83d8201f-6c96-4849-871b-99409abfc5f8
 # ╟─d0e12818-286b-475d-b76b-da777073e72a
-# ╠═17303de4-932a-4c0d-866c-7ac7ee60318d
 # ╟─c7a3f80b-b4df-4efd-a593-2d7bb511b053
 # ╠═b87f5371-13b0-4c73-91fb-8108a5a80a3e
 # ╠═02cddba9-a561-4360-bfe4-805f7bf53251
@@ -2102,5 +2191,27 @@ version = "1.4.1+0"
 # ╠═ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
 # ╠═b3e31f75-5216-47b5-85b3-026a0321c0a8
 # ╠═9c46ad96-96ac-4d40-bfec-d146451f1130
+# ╟─d61dba4b-4391-425e-8ac0-7ea7ae0b60d7
+# ╠═3fb7bb86-0c00-4233-a956-d12a256ab825
+# ╠═dfe7d9b7-adfa-47ff-8775-48b6e1ee5c79
+# ╠═f37f012b-ac46-4a4b-a7c4-9f49a9f83787
+# ╠═0712e87c-e2fe-4687-bf95-bda7269d8f8d
+# ╠═549df4a1-460d-42e1-983e-04c4645f2f29
+# ╠═6937a3c3-d54d-4f88-81d5-6e47413f2363
+# ╠═4e8f6d5e-65e4-42cf-afe4-0abf2d18f04e
+# ╠═c8eb6cfe-c083-44fb-9654-b01ad141e1f8
+# ╠═ec74d3e4-617c-4411-a9ee-442b1b55e5d8
+# ╠═ae199e1a-942a-4d24-b3cf-2881cf97b303
+# ╠═aba5af1d-ce3a-4532-8a39-72157b8ff87b
+# ╠═9f4eaff2-58b5-4cba-b68c-8313a16f89e4
+# ╠═b990d60a-fda4-41ba-a6a5-54e353fbb472
+# ╠═fd18902e-d7ed-4edf-ab0d-f7f23a205ecf
+# ╠═53b4f405-1405-4f52-9afa-521612dc27a3
+# ╠═12b128a5-9f0b-4539-b8e2-731bdd4915cd
+# ╠═8d9b7251-8a39-4ec0-aa8f-bcb4c08489dc
+# ╠═41d476ad-9d20-4021-848e-851bf67a8ac1
+# ╠═3b0f3818-bbcf-40b1-a22e-1034f4b4d612
+# ╠═bdbdb6d3-497c-42b7-80db-fd6a49480258
+# ╠═0d60a67e-8b35-4032-8237-6c21a402a5c2
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
