@@ -6,6 +6,8 @@ Tested with [Julia 1.8.5](https://julialang.org/downloads/). Download the softwa
 Open the REPL and type:
 ```julia
 julia > ]add Pluto
+
+julia > using Pluto
 ```
 [Pluto.jl](https://github.com/fonsp/Pluto.jl) is an interactive notebook environment.
 Download the file [SAS_examples.jl](SAS_examples.jl). From within Pluto, open this file.
