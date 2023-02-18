@@ -454,8 +454,48 @@ simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
 # ╔═╡ 41e06721-4d33-4f28-902e-e66864e0673c
 
 
-# ╔═╡ deebeb9e-3d00-43bd-a465-ec6945f9ed51
+# ╔═╡ 6fe0ebef-6705-47db-a7ff-0d82bfa8eb43
+begin
+	# size of field (without padding)
+	sz = (512, 512) 
+	# 0.25 is the theoretical minimum
+	pixelsize = 0.5 .* (λ,λ)
+	M2 = 18 # magnification
+	Δ = (pixelsize.^2 .* sz ./ λ)[1] # propagation distance for M==1
 
+	R = pixelsize[1]/λ
+	z0 = Δ .* M2 # M is the magnification. z0 is the total distance to propagate
+	L2 = pixelsize .* sz
+	# NAx = 0.5
+	# kx = sin(NAx)*pixelsize[1]/λ;
+	# ky =0
+	# mask = ComplexF32.(box(sz,(256,256)) .* exp_ikx(sz,shift_by=sz./4)); # box(sz,(111,111)) .* 
+	# mybox = conv_psf(box(sz,(256,256)), gaussian((sz[1],1),sigma=8))
+	# mybox = conv_psf(box(sz, (sz.*4.5) .÷ 10), gaussian((sz[1],sz[2]),sigma=(2.0,2.0)))
+	# mybox = filter_gaussian(box(sz.÷2, (sz.÷2) .÷ 10, offset=(sz.*0.9)), gaussian((sz[1],sz[2]),sigma=(2.0,2.0)))
+	mybox = conv_psf(box(sz.÷2, (sz.÷2) .÷ 10, offset=((sz.÷2) .*0.9)), gaussian(sz.÷2, sigma=(2.0,2.0)))
+	# mybox = conv_psf(box(sz,(128,128)), gaussian((sz[1],sz[2]),sigma=(2.0,2.0)))
+	max_angle = asind.(λ ./ (2 .*pixelsize))
+	aleph = sind(25) # sind(40)  #25
+	# mask = ComplexF32.(mybox); # box(sz,(111,111)) .* 
+	# using the image:
+	# mask = ComplexF32.(mask_im .* exp.((1im .* 2π/λ * aleph) .* xx(sz) .* pixelsize[1])); # box(sz,(111,111)) .* 
+	# mask = ComplexF32.(mybox .* exp.((1im .* 2π/λ * aleph) .* xx(sz) .* pixelsize[1])); # box(sz,(111,111)) .* 
+	# mask = ComplexF32.(mybox)
+
+	#mask = mybox .* ComplexF32.(exp.(1im .* π .* mask_im ./0.855)); # box(sz,(111,111)) .* 
+	mask = ComplexF32.(mybox .* exp_ikx(sz.÷2, shift_by= .- 10^6 .* aleph / 1.5 .* (sz.÷2) .* λ)); # box(sz,(111,111)) .* 
+
+	mybox2 = conv_psf(disc(sz.÷2, (sz.÷2) .÷ 20, offset=((sz.÷2) .*0.1)), gaussian(sz.÷2, sigma=(2.0,2.0)))
+	aleph2 = sind(28) # sind(40)  #25
+	mask2 = ComplexF32.(mybox2 .* exp_ikx(sz.÷2, shift_by= 10^6 .* aleph2 / 1.5 .* (sz.÷2) .* λ)); # box(sz,(111,111)) .* 
+end
+
+# ╔═╡ 82b67338-4474-4501-a1ba-4ae060bb4baa
+simshow(mask .+ mask2)
+
+# ╔═╡ 242ac622-de2c-481b-a996-31a5a026d6de
+simshow(abs2.(scaled_angular_spectrum(mask .+ mask2, z0, λ, L2[1])[1]), γ=0.2)
 
 # ╔═╡ 3fb4d3fc-e753-45a6-bed9-bad62a3708c6
 
@@ -2130,7 +2170,9 @@ version = "1.4.1+0"
 # ╠═8b88a6ef-c30c-4924-a316-64035727bdf8
 # ╠═b15dc45f-5755-4b26-bfee-df5c45cea527
 # ╠═41e06721-4d33-4f28-902e-e66864e0673c
-# ╠═deebeb9e-3d00-43bd-a465-ec6945f9ed51
+# ╠═6fe0ebef-6705-47db-a7ff-0d82bfa8eb43
+# ╠═82b67338-4474-4501-a1ba-4ae060bb4baa
+# ╠═242ac622-de2c-481b-a996-31a5a026d6de
 # ╠═3fb4d3fc-e753-45a6-bed9-bad62a3708c6
 # ╠═c77ebf5e-be51-4719-8616-4b15010afc4c
 # ╠═bd2fcfe8-fcd6-48ab-bbf1-b5b027613db6
