@@ -433,17 +433,108 @@ as_box = angular_spectrum(select_region(U_box, new_size=round.(Int, size(U_box) 
 # ╔═╡ d128d0ec-61bd-46a2-a915-e42220cd09cc
 simshow(abs2.(as_box[1]), γ=0.13, cmap=:inferno)
 
-# ╔═╡ 32600ad2-af2f-418a-93ed-bd8cc2095198
-sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=true)
-
-# ╔═╡ ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
-simshow(abs.(resample(abs2.(sft_fr_box[1]), M_box .* (N_box, N_box))), γ=0.13, cmap=:inferno)
-
 # ╔═╡ b3e31f75-5216-47b5-85b3-026a0321c0a8
 sas_box = scaled_angular_spectrum(U_box, z_box, λ, L_box, skip_final_phase=true)
 
 # ╔═╡ 9c46ad96-96ac-4d40-bfec-d146451f1130
 simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
+
+# ╔═╡ f2c75c53-9228-43c7-983e-2174dd922131
+
+
+# ╔═╡ ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
+simshow(abs.(resample(abs2.(sft_fr_box[1]), M_box .* (N_box, N_box))), γ=0.13, cmap=:inferno)
+
+# ╔═╡ a02540c8-3387-4945-bff2-479760e29b2d
+simshow(abs2.(sft_fr_box[1]), γ=0.1)
+
+# ╔═╡ 8b88a6ef-c30c-4924-a316-64035727bdf8
+
+
+# ╔═╡ b15dc45f-5755-4b26-bfee-df5c45cea527
+
+
+# ╔═╡ 57463cad-22e0-470e-8675-3aeba475262d
+begin
+	# size of field (without padding)
+	sz = (512, 512) 
+	# 0.25 is the theoretical minimum
+	pixelsize = 0.5 .* (λ,λ)
+	M2 = 18 # magnification
+	Δ = (pixelsize.^2 .* sz ./ λ)[1] # propagation distance for M==1
+	
+	R = pixelsize[1]/λ
+	z0 = Δ .* M2 # M is the magnification. z0 is the total distance to propagate
+	L2 = pixelsize .* sz
+	# NAx = 0.5
+	# kx = sin(NAx)*pixelsize[1]/λ;
+	# ky =0
+	# mask = ComplexF32.(box(sz,(256,256)) .* exp_ikx(sz,shift_by=sz./4)); # box(sz,(111,111)) .* 
+	# mybox = conv_psf(box(sz,(256,256)), gaussian((sz[1],1),sigma=8))
+	# mybox = conv_psf(box(sz, (sz.*4.5) .÷ 10), gaussian((sz[1],sz[2]),sigma=(2.0,2.0)))
+	# mybox = filter_gaussian(box(sz.÷2, (sz.÷2) .÷ 10, offset=(sz.*0.9)), gaussian((sz[1],sz[2]),sigma=(2.0,2.0)))
+	mybox = conv_psf(box(sz.÷2, (sz.÷2) .÷ 10, offset=((sz.÷2) .*0.9)), gaussian(sz.÷2, sigma=(2.0,2.0)))
+	# mybox = conv_psf(box(sz,(128,128)), gaussian((sz[1],sz[2]),sigma=(2.0,2.0)))
+	max_angle = asind.(λ ./ (2 .*pixelsize))
+	aleph = sind(25) # sind(40)  #25
+	# mask = ComplexF32.(mybox); # box(sz,(111,111)) .* 
+	# using the image:
+	# mask = ComplexF32.(mask_im .* exp.((1im .* 2π/λ * aleph) .* xx(sz) .* pixelsize[1])); # box(sz,(111,111)) .* 
+	# mask = ComplexF32.(mybox .* exp.((1im .* 2π/λ * aleph) .* xx(sz) .* pixelsize[1])); # box(sz,(111,111)) .* 
+	# mask = ComplexF32.(mybox)
+	
+	#mask = mybox .* ComplexF32.(exp.(1im .* π .* mask_im ./0.855)); # box(sz,(111,111)) .* 
+	mask = ComplexF32.(mybox .* exp_ikx(sz.÷2, shift_by= .-aleph .* (sz.÷2) .* λ)); # box(sz,(111,111)) .* 
+	
+	mybox2 = conv_psf(disc(sz.÷2, (sz.÷2) .÷ 20, offset=((sz.÷2) .*0.1)), gaussian(sz.÷2, sigma=(2.0,2.0)))
+	aleph2 = sind(28) # sind(40)  #25
+	mask2 = ComplexF32.(mybox2 .* exp_ikx(sz.÷2, shift_by= .-aleph2 .* (sz.÷2) .* λ)); # box(sz,(111,111)) .* 
+end
+
+# ╔═╡ 8120326d-0988-4f15-ad03-5d452094e1b8
+simshow(mask .+ mask2)
+
+# ╔═╡ cecac6e9-c16c-4b80-b16c-9525bf444d6d
+simshow(abs2.(scaled_angular_spectrum(mask .+ mask2, z0, λ, L2[1])[1]), γ=0.2)
+
+# ╔═╡ fd4a65b8-1fd8-4750-a978-af404eeacc9b
+
+
+# ╔═╡ 41e06721-4d33-4f28-902e-e66864e0673c
+
+
+# ╔═╡ deebeb9e-3d00-43bd-a465-ec6945f9ed51
+
+
+# ╔═╡ 3fb4d3fc-e753-45a6-bed9-bad62a3708c6
+
+
+# ╔═╡ c77ebf5e-be51-4719-8616-4b15010afc4c
+
+
+# ╔═╡ bd2fcfe8-fcd6-48ab-bbf1-b5b027613db6
+
+
+# ╔═╡ 26519739-a0f5-45be-a0ca-acfacfdb7f95
+
+
+# ╔═╡ 8cf8a3b4-5271-4012-b8f3-8e8e0e5c2993
+
+
+# ╔═╡ 81558914-1e9d-47d4-9bdc-c7eb0b0fe364
+
+
+# ╔═╡ 2d3ec9a1-37e3-4c87-8800-fd41714e4af3
+
+
+# ╔═╡ 402b1f42-6ab4-4019-9cb1-9766d0851bb9
+sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), -z_box/1, λ, L_box, skip_final_phase=true)
+
+# ╔═╡ 32600ad2-af2f-418a-93ed-bd8cc2095198
+# ╠═╡ disabled = true
+#=╠═╡
+sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=true)
+  ╠═╡ =#
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -2083,5 +2174,23 @@ version = "1.4.1+0"
 # ╠═ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
 # ╠═b3e31f75-5216-47b5-85b3-026a0321c0a8
 # ╠═9c46ad96-96ac-4d40-bfec-d146451f1130
+# ╠═f2c75c53-9228-43c7-983e-2174dd922131
+# ╠═402b1f42-6ab4-4019-9cb1-9766d0851bb9
+# ╠═a02540c8-3387-4945-bff2-479760e29b2d
+# ╠═8b88a6ef-c30c-4924-a316-64035727bdf8
+# ╠═b15dc45f-5755-4b26-bfee-df5c45cea527
+# ╠═57463cad-22e0-470e-8675-3aeba475262d
+# ╠═8120326d-0988-4f15-ad03-5d452094e1b8
+# ╠═cecac6e9-c16c-4b80-b16c-9525bf444d6d
+# ╠═fd4a65b8-1fd8-4750-a978-af404eeacc9b
+# ╠═41e06721-4d33-4f28-902e-e66864e0673c
+# ╠═deebeb9e-3d00-43bd-a465-ec6945f9ed51
+# ╠═3fb4d3fc-e753-45a6-bed9-bad62a3708c6
+# ╠═c77ebf5e-be51-4719-8616-4b15010afc4c
+# ╠═bd2fcfe8-fcd6-48ab-bbf1-b5b027613db6
+# ╠═26519739-a0f5-45be-a0ca-acfacfdb7f95
+# ╠═8cf8a3b4-5271-4012-b8f3-8e8e0e5c2993
+# ╠═81558914-1e9d-47d4-9bdc-c7eb0b0fe364
+# ╠═2d3ec9a1-37e3-4c87-8800-fd41714e4af3
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
