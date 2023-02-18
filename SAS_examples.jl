@@ -484,7 +484,7 @@ gb = gauss_beam(y_gauss, y_gauss', w_0, λ, 1e-12);
 simshow(gb)
 
 # ╔═╡ aba5af1d-ce3a-4532-8a39-72157b8ff87b
-zs = range(400e-6, 5000e-6, 400)
+zs = range(800e-6, 5000e-6, 400)
 
 # ╔═╡ 4e8f6d5e-65e4-42cf-afe4-0abf2d18f04e
 gauss_paraxial = gauss_beam(y_gauss, y_gauss', w_0, λ, reshape(zs, (1,1,length(zs))))
@@ -540,10 +540,10 @@ simshow(gauss_axial[:, 129, :], γ=0.1)
 
 # ╔═╡ 41d476ad-9d20-4021-848e-851bf67a8ac1
 begin
-	plot(real.(gauss_paraxial[129, 129, :]), label="Paraxial")
-	plot!(real.(gauss_axial[129, 129, :]), label="SAS")
-	plot!(real.(gauss_AS[129, 129, :]), label="AS")
-	plot!(real.(gauss_FR[129, 129, :]), label="FR")
+	plot(real.(gauss_paraxial[20, 129, :] .* 1im), label="Paraxial")
+	plot!(real.(gauss_axial[20, 129, :]), label="SAS")
+	plot!(real.(gauss_AS[20, 129, :]), label="AS")
+	plot!(real.(gauss_FR[20, 129, :]), label="FR")
 end
 
 # ╔═╡ 3b0f3818-bbcf-40b1-a22e-1034f4b4d612
