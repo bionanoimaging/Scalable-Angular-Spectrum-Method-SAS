@@ -5,7 +5,7 @@ using Markdown
 using InteractiveUtils
 
 # ╔═╡ 4f0ea44a-5475-11ed-3979-6d7d4c1a8ce1
-using FFTW, NDTools, Interpolations, IndexFunArrays, Colors, ImageShow, ImageIO, FourierTools, Plots, Interpolations, PlutoUI, ImageView
+using FFTW, NDTools, Interpolations, IndexFunArrays, Colors, ImageShow, ImageIO, FourierTools, Plots, Interpolations, PlutoUI, ImageView, ColorSchemes
 
 # ╔═╡ 2bd51f20-7abb-4d95-a56b-c2e058c2a1be
 md"# Scaled Angular Spectrum
@@ -223,7 +223,7 @@ function angular_spectrum(field::Matrix{T}, z, λ, L; pad_factor = 2) where T
 	field_out_cropped = select_region(field_out, new_size=size(field))
 
 	# return final field and some other variables
-	return field_out_cropped, (; HW=H .* W, W, H, f_x, f_y, f_x_limit)
+	return field_out_cropped, (; )
 end
 
 # ╔═╡ 2177f522-9ccb-4b96-8bd5-92718f0d5cc6
@@ -273,7 +273,7 @@ function fresnel(field::Matrix{T}, z, λ, L; skip_final_phase=true) where T
 	field_out .*= 1 / (1im * T(sqrt(length(field_out)))) 
 	
 	# transfer function kernel of angular spectrum
-	return field_out, (; L=Q, H₁, H₂)
+	return field_out, (; L=Q)
 end
 
 # ╔═╡ 4db3a990-4e5d-4fe7-89cc-4823d1b5b592
@@ -355,7 +355,7 @@ function scaled_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 
 	ψ_final = select_region(ψ_p_final, new_size=size(ψ₀))
 	
-	return ψ_final, (;Q, L=L * M, H₁, H₂)
+	return ψ_final, (;Q, L=L * M)
 end
 
 # ╔═╡ 6fa374ce-6953-443a-94a0-9859237fe345
@@ -431,133 +431,24 @@ simshow(U_box)
 as_box = angular_spectrum(select_region(U_box, new_size=round.(Int, size(U_box) .* M_box)), z_box, λ, L_box * M_box)
 
 # ╔═╡ d128d0ec-61bd-46a2-a915-e42220cd09cc
-simshow(abs2.(as_box[1]), γ=0.2)
+simshow(abs2.(as_box[1]), γ=0.13, cmap=:inferno)
 
 # ╔═╡ 32600ad2-af2f-418a-93ed-bd8cc2095198
 sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=true)
 
 # ╔═╡ ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
-simshow(abs.(resample(abs2.(sft_fr_box[1]), M_box .* (N_box, N_box))),γ=0.2)
+simshow(abs.(resample(abs2.(sft_fr_box[1]), M_box .* (N_box, N_box))), γ=0.13, cmap=:inferno)
 
 # ╔═╡ b3e31f75-5216-47b5-85b3-026a0321c0a8
 sas_box = scaled_angular_spectrum(U_box, z_box, λ, L_box, skip_final_phase=true)
 
 # ╔═╡ 9c46ad96-96ac-4d40-bfec-d146451f1130
-simshow(abs2.(sas_box[1]), γ=0.2)
-
-# ╔═╡ d61dba4b-4391-425e-8ac0-7ea7ae0b60d7
-md"""# Third Example: Gauss Beam
-
-"""
-
-# ╔═╡ 3fb7bb86-0c00-4233-a956-d12a256ab825
-L_gauss = 200e-6;
-
-# ╔═╡ dfe7d9b7-adfa-47ff-8775-48b6e1ee5c79
-N_gauss = 256;
-
-# ╔═╡ f37f012b-ac46-4a4b-a7c4-9f49a9f83787
-y_gauss = fftpos(L_gauss, N_gauss, NDTools.CenterFT);
-
-# ╔═╡ 0712e87c-e2fe-4687-bf95-bda7269d8f8d
-w_0 = 1e-6
-
-# ╔═╡ 549df4a1-460d-42e1-983e-04c4645f2f29
-400e-6 * λ * N_gauss / (200e-6)^2
-
-# ╔═╡ 6937a3c3-d54d-4f88-81d5-6e47413f2363
-function gauss_beam(y, x, w_0, λ, z)
-	k = 2π / λ
-	z_R = π * w_0^2 / λ
-	R(z) = z * (1 + (z_R /z)^2)
-	ψ(z) = atan.(z, z_R)
-	w(z) = w_0 * sqrt(1 + (z / z_R)^2)
-	r2 = x.^2 .+ y.^2
-	ψ(z)
-	return w_0 ./ w.(z) .* exp.(-r2 ./ w.(z).^2) .* exp.(-1im .* (k .* z .+ k .* r2 ./ 2 ./ R.(z)) .- ψ.(z))
-end
-
-# ╔═╡ ec74d3e4-617c-4411-a9ee-442b1b55e5d8
-gb = gauss_beam(y_gauss, y_gauss', w_0, λ, 1e-12);
-
-# ╔═╡ ae199e1a-942a-4d24-b3cf-2881cf97b303
-simshow(gb)
-
-# ╔═╡ aba5af1d-ce3a-4532-8a39-72157b8ff87b
-zs = range(800e-6, 5000e-6, 400)
-
-# ╔═╡ 4e8f6d5e-65e4-42cf-afe4-0abf2d18f04e
-gauss_paraxial = gauss_beam(y_gauss, y_gauss', w_0, λ, reshape(zs, (1,1,length(zs))))
-
-# ╔═╡ c8eb6cfe-c083-44fb-9654-b01ad141e1f8
-simshow(gauss_paraxial[:, 129, :], γ=0.3)
-
-# ╔═╡ b990d60a-fda4-41ba-a6a5-54e353fbb472
-begin
-	gauss_AS = similar(gauss_paraxial)
-	
-	Threads.@threads for i in 1:size(gauss_paraxial, 3)
-		arr, t = angular_spectrum(gb, zs[i], λ, L_gauss)
-		gauss_AS[:,:, i] .= arr
-	end
-end
-
-# ╔═╡ 53b4f405-1405-4f52-9afa-521612dc27a3
-scaled_angular_spectrum(gb, 10e-6, λ, L_gauss, skip_final_phase=false)[2].L
-
-# ╔═╡ 12b128a5-9f0b-4539-b8e2-731bdd4915cd
-function rescale(arr, L, L_ref)
-	sz = size(arr)
-	sz_new = round.(Ref(Int), sz .* L_ref ./ L)
-	arr_new = select_region(arr, new_size=sz_new)
-	arr = resample(arr_new, sz, normalize=false)
-	return arr
-end
-
-# ╔═╡ 9f4eaff2-58b5-4cba-b68c-8313a16f89e4
-begin
-	gauss_axial = similar(gauss_paraxial)
-	
-	
-	Threads.@threads for i in 1:size(gauss_paraxial, 3)
-		arr, t = scaled_angular_spectrum(gb, zs[i], λ, L_gauss, skip_final_phase=false)
-		gauss_axial[:,:, i] .= rescale(arr, t.L, L_gauss)
-	end
-end
-
-# ╔═╡ fd18902e-d7ed-4edf-ab0d-f7f23a205ecf
-begin
-	gauss_FR = similar(gauss_paraxial)
-	
-	Threads.@threads for i in 1:size(gauss_paraxial, 3)
-		arr, t = fresnel(gb, zs[i], λ, L_gauss, skip_final_phase=false)
-		gauss_FR[:,:, i] .= rescale(arr, t.L, L_gauss)
-	end
-end
-
-# ╔═╡ 8d9b7251-8a39-4ec0-aa8f-bcb4c08489dc
-simshow(gauss_axial[:, 129, :], γ=0.1)
-
-# ╔═╡ 41d476ad-9d20-4021-848e-851bf67a8ac1
-begin
-	plot(real.(gauss_paraxial[20, 129, :] .* 1im), label="Paraxial")
-	plot!(real.(gauss_axial[20, 129, :]), label="SAS")
-	plot!(real.(gauss_AS[20, 129, :]), label="AS")
-	plot!(real.(gauss_FR[20, 129, :]), label="FR")
-end
-
-# ╔═╡ 3b0f3818-bbcf-40b1-a22e-1034f4b4d612
-sum(abs2, gauss_FR, dims=(1,2))
-
-# ╔═╡ bdbdb6d3-497c-42b7-80db-fd6a49480258
-sum(abs2, gauss_AS, dims=(1,2))
-
-# ╔═╡ 0d60a67e-8b35-4032-8237-6c21a402a5c2
-sum(abs2, gauss_axial, dims=(1,2))
+simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
 [deps]
+ColorSchemes = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
 Colors = "5ae59095-9a9b-59fe-a467-6f913c188581"
 FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
 FourierTools = "b18b359b-aebc-45ac-a139-9c0ccbb2871e"
@@ -571,6 +462,7 @@ Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
 
 [compat]
+ColorSchemes = "~3.20.0"
 Colors = "~0.12.8"
 FFTW = "~1.5.0"
 FourierTools = "~0.3.6"
@@ -590,7 +482,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.8.5"
 manifest_format = "2.0"
-project_hash = "76bc93f9e5b7a920445dd59355c00ef2a31e44ae"
+project_hash = "81b86a54008070d36032012869729844f74ad42c"
 
 [[deps.ATK_jll]]
 deps = ["Artifacts", "Glib_jll", "JLLWrappers", "Libdl", "Pkg"]
@@ -713,10 +605,10 @@ uuid = "944b1d66-785c-5afd-91f1-9de20f533193"
 version = "0.7.0"
 
 [[deps.ColorSchemes]]
-deps = ["ColorTypes", "ColorVectorSpace", "Colors", "FixedPointNumbers", "Random"]
-git-tree-sha1 = "1fd869cc3875b57347f7027521f561cf46d1fcd8"
+deps = ["ColorTypes", "ColorVectorSpace", "Colors", "FixedPointNumbers", "Random", "SnoopPrecompile"]
+git-tree-sha1 = "aa3edc8f8dea6cbfa176ee12f7c2fc82f0608ed3"
 uuid = "35d6a980-a343-548e-a6ea-1d62b119f2f4"
-version = "3.19.0"
+version = "3.20.0"
 
 [[deps.ColorTypes]]
 deps = ["FixedPointNumbers", "Random"]
@@ -2191,27 +2083,5 @@ version = "1.4.1+0"
 # ╠═ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
 # ╠═b3e31f75-5216-47b5-85b3-026a0321c0a8
 # ╠═9c46ad96-96ac-4d40-bfec-d146451f1130
-# ╟─d61dba4b-4391-425e-8ac0-7ea7ae0b60d7
-# ╠═3fb7bb86-0c00-4233-a956-d12a256ab825
-# ╠═dfe7d9b7-adfa-47ff-8775-48b6e1ee5c79
-# ╠═f37f012b-ac46-4a4b-a7c4-9f49a9f83787
-# ╠═0712e87c-e2fe-4687-bf95-bda7269d8f8d
-# ╠═549df4a1-460d-42e1-983e-04c4645f2f29
-# ╠═6937a3c3-d54d-4f88-81d5-6e47413f2363
-# ╠═4e8f6d5e-65e4-42cf-afe4-0abf2d18f04e
-# ╠═c8eb6cfe-c083-44fb-9654-b01ad141e1f8
-# ╠═ec74d3e4-617c-4411-a9ee-442b1b55e5d8
-# ╠═ae199e1a-942a-4d24-b3cf-2881cf97b303
-# ╠═aba5af1d-ce3a-4532-8a39-72157b8ff87b
-# ╠═9f4eaff2-58b5-4cba-b68c-8313a16f89e4
-# ╠═b990d60a-fda4-41ba-a6a5-54e353fbb472
-# ╠═fd18902e-d7ed-4edf-ab0d-f7f23a205ecf
-# ╠═53b4f405-1405-4f52-9afa-521612dc27a3
-# ╠═12b128a5-9f0b-4539-b8e2-731bdd4915cd
-# ╠═8d9b7251-8a39-4ec0-aa8f-bcb4c08489dc
-# ╠═41d476ad-9d20-4021-848e-851bf67a8ac1
-# ╠═3b0f3818-bbcf-40b1-a22e-1034f4b4d612
-# ╠═bdbdb6d3-497c-42b7-80db-fd6a49480258
-# ╠═0d60a67e-8b35-4032-8237-6c21a402a5c2
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
