@@ -155,31 +155,31 @@ Internal method to create variables we need for propagation such as frequencies 
 """
 function _propagation_variables(field::AbstractArray{T, M}, z, λ, L) where {T, M} 
 	@assert size(field, 1) == size(field, 2) "Quadratic fields only working currently"
-
-	# wave number
-    k = T(2π) / λ
-	# number of samples
-    N = size(field, 1)
-    # sample spacing
-    dx = L / N 
-	# frequency spacing
-    df = 1 / L 
-	# total size in frequency space
-    Lf = N * df
 	
-    # frequencies centered around first entry 
+	# wave number
+	k = T(2π) / λ
+	# number of samples
+	N = size(field, 1)
+	# sample spacing
+	dx = L / N 
+	# frequency spacing
+	df = 1 / L 
+	# total size in frequency space
+	Lf = N * df
+	
+	# frequencies centered around first entry 
 	# 1D vectors each
-    f_y = similar(field, real(eltype(field)), (N,))
-    f_y .= fftfreq(N, Lf)
-    f_x = collect(f_y')
-
+	f_y = similar(field, real(eltype(field)), (N,))
+	f_y .= fftfreq(N, Lf)
+	f_x = collect(f_y')
+	
 	# y and x positions in real space
 	#y = ifftshift(range(-L/2, L/2, length=N))
-    y = similar(field, real(eltype(field)), (N,))
+	y = similar(field, real(eltype(field)), (N,))
 	y .= ifftshift(fftpos(L, N, CenterFT))
 	x = collect(y')
 	
-    return (; k, dx, df, f_x, f_y, x, y)
+	return (; k, dx, df, f_x, f_y, x, y)
 end
 
 # ╔═╡ adfcc771-e092-4dd3-8ff9-9a940c1c29a3
@@ -195,33 +195,33 @@ function angular_spectrum(field::Matrix{T}, z, λ, L; pad_factor = 2) where T
 	
 	# applies zero padding
 	field_new = select_region(field, new_size=size(field) .* pad_factor)
-
+	
 	# helpful propagation variables
 	(; k, f_x, f_y) = _propagation_variables(field_new, z, λ, L_new)
-
+	
 	# transfer function kernel of angular spectrum
 	H = exp.(1im .* k .* z .* sqrt.(0im .+ 1 .- abs2.(f_x .* λ) .- abs2.(f_y .* λ)))
-
+	
 	# bandlimit according to Matsushima
 	# as addition we introduce a smooth bandlimit with a Hann window
 	# and fuzzy logic 
 	Δu =   1 / L_new
 	u_limit = 1 / (sqrt((2 * Δu * z)^2 + 1) * λ)
 	smooth_f(x, α, β) = hann(scale(x, α, β))
-
+	
 	f_x_limit = sqrt(inv(1/u_limit^2 + λ^2))
-
+	
 	
 	# bandlimit filter
 	# smoothing at 0.8 is arbitrary but works well
 	W = .*(smooth_f.(abs2.(f_y) ./ u_limit^2 .+ abs2.(f_x) * λ^2, 0.8, 1),
-         smooth_f.(abs2.(f_x) ./ u_limit^2 .+ abs2.(f_y) * λ^2, 0.8, 1))
-
+		 smooth_f.(abs2.(f_x) ./ u_limit^2 .+ abs2.(f_y) * λ^2, 0.8, 1))
+	
 	# propagate field
 	field_out = fftshift(ifft(fft(ifftshift(field_new)) .* H .* W))
 	# take center part because of circular convolution
 	field_out_cropped = select_region(field_out, new_size=size(field))
-
+	
 	# return final field and some other variables
 	return field_out_cropped, (; )
 end
@@ -234,41 +234,41 @@ Returns the the electrical field with physical length `L` and wavelength `λ` pr
 
 
 """
-function fresnel(field::Matrix{T}, z, λ, L; skip_final_phase=true) where T
+	function fresnel(field::Matrix{T}, z, λ, L; skip_final_phase=true) where T
 	@assert size(field, 1) == size(field, 2) "Restricted to auadratic fields."
 	# we need to apply padding to prevent circular convolution
 	pad_factor = 1
 	L_new = pad_factor .* L
 	# applies zero padding
 	field_new = select_region(field, new_size=size(field) .* pad_factor)
-
+	
 	# helpful propagation variables
 	(; k, f_x, f_y, x, y) = _propagation_variables(field_new, z, λ, L_new)
-
+	
 	
 	N = size(field_new, 1)
 	# new sample coordinates
-    dq = λ * z / L_new
+	dq = λ * z / L_new
 	Q = dq * N
-
-    #Q_x = fftpos(dq * N, N, CenterFT)
-    q_y = similar(field, N)
-    #q_y .= ifftshift(fftpos(dq * N, N, CenterFT))
+	
+	#Q_x = fftpos(dq * N, N, CenterFT)
+	q_y = similar(field, N)
+	#q_y .= ifftshift(fftpos(dq * N, N, CenterFT))
 	q_y .= ifftshift(range(-Q/2, Q/2, length=N))
 	q_x = q_y'
-
+	
 	# calculate phases of Fresnel
-    H₁ = exp.(1im .* k ./ (2 .* z) .* (x .^ 2 .+ y .^ 2))
-    H₂ = (exp.(1im .* k .* z) .*
-             exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
-
+	H₁ = exp.(1im .* k ./ (2 .* z) .* (x .^ 2 .+ y .^ 2))
+	H₂ = (exp.(1im .* k .* z) .*
+			 exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
+	
 	# skips multiplication of final phase
 	if skip_final_phase
 		field_out = fftshift(fft(ifftshift(field_new) .* H₁))
 	else
 		field_out = fftshift(fft(ifftshift(field_new) .* H₁) .* H₂)
 	end
-
+	
 	# fix scaling
 	field_out .*= 1 / (1im * T(sqrt(length(field_out)))) 
 	
@@ -286,11 +286,11 @@ function scaled_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 								 pad_factor=2, skip_final_phase=true,  set_pad_zero=false) where {T} 
 	
 	@assert size(ψ₀, 1) == size(ψ₀, 2) "Restricted to auadratic fields."
-
+	
 	
 	N = size(ψ₀, 1)
 	z_limit = (- 4 * L * sqrt(8*L^2 / N^2 + λ^2) * sqrt(L^2 * inv(8 * L^2 + N^2 * λ^2)) / (λ * (-1+2 * sqrt(2) * sqrt(L^2 * inv(8 * L^2 + N^2 * λ^2)))))
-
+	
 	
 	z > z_limit &&  @warn "Propagated field might be affected by vignetting"
 	L_new = pad_factor * L
@@ -300,26 +300,26 @@ function scaled_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 	k, dx, df, f_x, f_y, x, y = _propagation_variables(ψ_p, z, λ, L_new)  
 	M = λ * z * N / L^2 / 2
 	
-    # calculate anti_aliasing_filter for precompensation
-    cx = λ .* f_x 
-    cy = λ .* f_y 
-    tx = L_new / 2 / z .+ abs.(λ .* f_x)
-    ty = L_new / 2 / z .+ abs.(λ .* f_y)
-
+	# calculate anti_aliasing_filter for precompensation
+	cx = λ .* f_x 
+	cy = λ .* f_y 
+	tx = L_new / 2 / z .+ abs.(λ .* f_x)
+	ty = L_new / 2 / z .+ abs.(λ .* f_y)
+	
 	# smooth window functon
 	smooth_f(x, α, β) = hann(scale(x, α, β))
-
+	
 	# bandlimit filter for precompensation
 	W = .*(
 			smooth_f.(cx.^2 .* (1 .+ tx.^2) ./ tx.^2 .+ cy.^2, 0.8, 1),
 			smooth_f.(cy.^2 .* (1 .+ ty.^2) ./ ty.^2 .+ cx.^2, 0.8, 1))
 	
-    # Γ is the core part of Fresnel and AS
-    H_AS = sqrt.(0im .+ 1 .- abs2.(f_x .* λ) .- abs2.(f_y .* λ)) 
-    H_Fr = 1 .- abs2.(f_x .* λ) / 2 .- abs2.(f_y .* λ) / 2 
-    # take the difference here, key part of the ScaledAS
-    ΔH = W .* exp.(1im .* k .* z .* (H_AS .- H_Fr)) 
-
+	# Γ is the core part of Fresnel and AS
+	H_AS = sqrt.(0im .+ 1 .- abs2.(f_x .* λ) .- abs2.(f_y .* λ)) 
+	H_Fr = 1 .- abs2.(f_x .* λ) / 2 .- abs2.(f_y .* λ) / 2 
+	# take the difference here, key part of the ScaledAS
+	ΔH = W .* exp.(1im .* k .* z .* (H_AS .- H_Fr)) 
+	
 	ψ_precomp = ifft(fft(ifftshift(ψ_p)) .* ΔH)
 	
 	# we can set the padding region to zero
@@ -331,28 +331,28 @@ function scaled_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 	end
 	
 	# new sample coordinates
-    dq = λ * z / L_new
+	dq = λ * z / L_new
 	Q = dq * N * pad_factor
-    q_y = similar(ψ_p, pad_factor * N)
+	q_y = similar(ψ_p, pad_factor * N)
 	#q_y .= ifftshift(range(- Q / 2, Q / 2, N * pad_factor))
-    q_y .= ifftshift(fftpos(dq * pad_factor * N, pad_factor * N, CenterFT))
+	q_y .= ifftshift(fftpos(dq * pad_factor * N, pad_factor * N, CenterFT))
 	q_x = q_y'
-
+	
 	# calculate phases of Fresnel
-    H₁ = exp.(1im .* k ./ (2 .* z) .* (x .^ 2 .+ y .^ 2))
-    H₂ = (exp.(1im .* k .* z) .*
-             exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
-
+	H₁ = exp.(1im .* k ./ (2 .* z) .* (x .^ 2 .+ y .^ 2))
+	H₂ = (exp.(1im .* k .* z) .*
+			 exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
+	
 	if skip_final_phase
 		ψ_p_final = fftshift(fft(H₁ .* ψ_precomp))
 	else
 		ψ_p_final = fftshift(H₂ .* fft(H₁ .* ψ_precomp))
 	end
-
+	
 	# fix scaling
 	ψ_p_final .*= 1 / (1im * T(sqrt(length(ψ_precomp)))) 
-
-
+	
+	
 	ψ_final = select_region(ψ_p_final, new_size=size(ψ₀))
 	
 	return ψ_final, (;Q, L=L * M)
@@ -436,68 +436,19 @@ simshow(abs2.(as_box[1]), γ=0.13, cmap=:inferno)
 # ╔═╡ b3e31f75-5216-47b5-85b3-026a0321c0a8
 sas_box = scaled_angular_spectrum(U_box, z_box, λ, L_box, skip_final_phase=true)
 
+# ╔═╡ ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
+simshow(abs.(resample(abs2.(sft_fr_box[1]), M_box .* (N_box, N_box))), γ=0.13, cmap=:inferno)
+
 # ╔═╡ 9c46ad96-96ac-4d40-bfec-d146451f1130
 simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
 
 # ╔═╡ f2c75c53-9228-43c7-983e-2174dd922131
 
 
-# ╔═╡ ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
-simshow(abs.(resample(abs2.(sft_fr_box[1]), M_box .* (N_box, N_box))), γ=0.13, cmap=:inferno)
-
-# ╔═╡ a02540c8-3387-4945-bff2-479760e29b2d
-simshow(abs2.(sft_fr_box[1]), γ=0.1)
-
 # ╔═╡ 8b88a6ef-c30c-4924-a316-64035727bdf8
 
 
 # ╔═╡ b15dc45f-5755-4b26-bfee-df5c45cea527
-
-
-# ╔═╡ 57463cad-22e0-470e-8675-3aeba475262d
-begin
-	# size of field (without padding)
-	sz = (512, 512) 
-	# 0.25 is the theoretical minimum
-	pixelsize = 0.5 .* (λ,λ)
-	M2 = 18 # magnification
-	Δ = (pixelsize.^2 .* sz ./ λ)[1] # propagation distance for M==1
-	
-	R = pixelsize[1]/λ
-	z0 = Δ .* M2 # M is the magnification. z0 is the total distance to propagate
-	L2 = pixelsize .* sz
-	# NAx = 0.5
-	# kx = sin(NAx)*pixelsize[1]/λ;
-	# ky =0
-	# mask = ComplexF32.(box(sz,(256,256)) .* exp_ikx(sz,shift_by=sz./4)); # box(sz,(111,111)) .* 
-	# mybox = conv_psf(box(sz,(256,256)), gaussian((sz[1],1),sigma=8))
-	# mybox = conv_psf(box(sz, (sz.*4.5) .÷ 10), gaussian((sz[1],sz[2]),sigma=(2.0,2.0)))
-	# mybox = filter_gaussian(box(sz.÷2, (sz.÷2) .÷ 10, offset=(sz.*0.9)), gaussian((sz[1],sz[2]),sigma=(2.0,2.0)))
-	mybox = conv_psf(box(sz.÷2, (sz.÷2) .÷ 10, offset=((sz.÷2) .*0.9)), gaussian(sz.÷2, sigma=(2.0,2.0)))
-	# mybox = conv_psf(box(sz,(128,128)), gaussian((sz[1],sz[2]),sigma=(2.0,2.0)))
-	max_angle = asind.(λ ./ (2 .*pixelsize))
-	aleph = sind(25) # sind(40)  #25
-	# mask = ComplexF32.(mybox); # box(sz,(111,111)) .* 
-	# using the image:
-	# mask = ComplexF32.(mask_im .* exp.((1im .* 2π/λ * aleph) .* xx(sz) .* pixelsize[1])); # box(sz,(111,111)) .* 
-	# mask = ComplexF32.(mybox .* exp.((1im .* 2π/λ * aleph) .* xx(sz) .* pixelsize[1])); # box(sz,(111,111)) .* 
-	# mask = ComplexF32.(mybox)
-	
-	#mask = mybox .* ComplexF32.(exp.(1im .* π .* mask_im ./0.855)); # box(sz,(111,111)) .* 
-	mask = ComplexF32.(mybox .* exp_ikx(sz.÷2, shift_by= .-aleph .* (sz.÷2) .* λ)); # box(sz,(111,111)) .* 
-	
-	mybox2 = conv_psf(disc(sz.÷2, (sz.÷2) .÷ 20, offset=((sz.÷2) .*0.1)), gaussian(sz.÷2, sigma=(2.0,2.0)))
-	aleph2 = sind(28) # sind(40)  #25
-	mask2 = ComplexF32.(mybox2 .* exp_ikx(sz.÷2, shift_by= .-aleph2 .* (sz.÷2) .* λ)); # box(sz,(111,111)) .* 
-end
-
-# ╔═╡ 8120326d-0988-4f15-ad03-5d452094e1b8
-simshow(mask .+ mask2)
-
-# ╔═╡ cecac6e9-c16c-4b80-b16c-9525bf444d6d
-simshow(abs2.(scaled_angular_spectrum(mask .+ mask2, z0, λ, L2[1])[1]), γ=0.2)
-
-# ╔═╡ fd4a65b8-1fd8-4750-a978-af404eeacc9b
 
 
 # ╔═╡ 41e06721-4d33-4f28-902e-e66864e0673c
@@ -527,8 +478,8 @@ simshow(abs2.(scaled_angular_spectrum(mask .+ mask2, z0, λ, L2[1])[1]), γ=0.2)
 # ╔═╡ 2d3ec9a1-37e3-4c87-8800-fd41714e4af3
 
 
-# ╔═╡ 402b1f42-6ab4-4019-9cb1-9766d0851bb9
-sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), -z_box/1, λ, L_box, skip_final_phase=true)
+# ╔═╡ dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
+sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=true)
 
 # ╔═╡ 32600ad2-af2f-418a-93ed-bd8cc2095198
 # ╠═╡ disabled = true
@@ -2173,16 +2124,11 @@ version = "1.4.1+0"
 # ╠═32600ad2-af2f-418a-93ed-bd8cc2095198
 # ╠═ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
 # ╠═b3e31f75-5216-47b5-85b3-026a0321c0a8
+# ╠═dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
 # ╠═9c46ad96-96ac-4d40-bfec-d146451f1130
 # ╠═f2c75c53-9228-43c7-983e-2174dd922131
-# ╠═402b1f42-6ab4-4019-9cb1-9766d0851bb9
-# ╠═a02540c8-3387-4945-bff2-479760e29b2d
 # ╠═8b88a6ef-c30c-4924-a316-64035727bdf8
 # ╠═b15dc45f-5755-4b26-bfee-df5c45cea527
-# ╠═57463cad-22e0-470e-8675-3aeba475262d
-# ╠═8120326d-0988-4f15-ad03-5d452094e1b8
-# ╠═cecac6e9-c16c-4b80-b16c-9525bf444d6d
-# ╠═fd4a65b8-1fd8-4750-a978-af404eeacc9b
 # ╠═41e06721-4d33-4f28-902e-e66864e0673c
 # ╠═deebeb9e-3d00-43bd-a465-ec6945f9ed51
 # ╠═3fb4d3fc-e753-45a6-bed9-bad62a3708c6
