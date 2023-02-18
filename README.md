@@ -1,6 +1,5 @@
-# Scalable-Angular-Spectrum-Method-SAS-
-Implementations of the Angular Spectrum Method for eletrical wave propagation.
-
+# Scalable Angular Spectrum Method SAS
+Implementations of the Angular Spectrum Method for optical wave propagation.
 
 # Julia Code
 Tested with [Julia 1.8.5](https://julialang.org/downloads/). Download the software and install it on your computer.
