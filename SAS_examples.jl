@@ -1,5 +1,5 @@
 ### A Pluto.jl notebook ###
-# v0.19.22
+# v0.19.14
 
 using Markdown
 using InteractiveUtils
@@ -433,8 +433,17 @@ as_box = angular_spectrum(select_region(U_box, new_size=round.(Int, size(U_box) 
 # ╔═╡ d128d0ec-61bd-46a2-a915-e42220cd09cc
 simshow(abs2.(as_box[1]), γ=0.13, cmap=:inferno)
 
+# ╔═╡ 32600ad2-af2f-418a-93ed-bd8cc2095198
+# ╠═╡ disabled = true
+#=╠═╡
+sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=true)
+  ╠═╡ =#
+
 # ╔═╡ b3e31f75-5216-47b5-85b3-026a0321c0a8
 sas_box = scaled_angular_spectrum(U_box, z_box, λ, L_box, skip_final_phase=true)
+
+# ╔═╡ dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
+sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=true)
 
 # ╔═╡ ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
 simshow(abs.(resample(abs2.(sft_fr_box[1]), M_box .* (N_box, N_box))), γ=0.13, cmap=:inferno)
@@ -460,72 +469,48 @@ begin
 	sz = (512, 512) 
 	# 0.25 is the theoretical minimum
 	pixelsize = 0.5 .* (λ,λ)
-	M2 = 18 # magnification
+	M2 = 10 # magnification
 	Δ = (pixelsize.^2 .* sz ./ λ)[1] # propagation distance for M==1
 
 	R = pixelsize[1]/λ
 	z0 = Δ .* M2 # M is the magnification. z0 is the total distance to propagate
 	L2 = pixelsize .* sz
-	# NAx = 0.5
-	# kx = sin(NAx)*pixelsize[1]/λ;
-	# ky =0
-	# mask = ComplexF32.(box(sz,(256,256)) .* exp_ikx(sz,shift_by=sz./4)); # box(sz,(111,111)) .* 
-	# mybox = conv_psf(box(sz,(256,256)), gaussian((sz[1],1),sigma=8))
-	# mybox = conv_psf(box(sz, (sz.*4.5) .÷ 10), gaussian((sz[1],sz[2]),sigma=(2.0,2.0)))
-	# mybox = filter_gaussian(box(sz.÷2, (sz.÷2) .÷ 10, offset=(sz.*0.9)), gaussian((sz[1],sz[2]),sigma=(2.0,2.0)))
-	mybox = conv_psf(box(sz.÷2, (sz.÷2) .÷ 10, offset=((sz.÷2) .*0.9)), gaussian(sz.÷2, sigma=(2.0,2.0)))
+	
+	maxZL(R)=4*R/(1/R-2*sqrt(2)/sqrt(1+8*R^2)) # maximum Z/L as a function of pix/λ
+	R = pixelsize[1]/λ
+	println("M = $M2, pix/λ=$(R), max z/L= $(round(maxZL(R))) z/L = $(z0 / (L2[1]/2))")
+	
+	box_center = ((sz.÷2) .*0.9)
+	mybox = conv_psf(box(sz.÷2, (sz.÷2) .÷ 10, offset=box_center), gaussian(sz.÷2, sigma=(2.0,2.0)))
 	# mybox = conv_psf(box(sz,(128,128)), gaussian((sz[1],sz[2]),sigma=(2.0,2.0)))
 	max_angle = asind.(λ ./ (2 .*pixelsize))
-	aleph = sind(25) # sind(40)  #25
-	# mask = ComplexF32.(mybox); # box(sz,(111,111)) .* 
-	# using the image:
-	# mask = ComplexF32.(mask_im .* exp.((1im .* 2π/λ * aleph) .* xx(sz) .* pixelsize[1])); # box(sz,(111,111)) .* 
-	# mask = ComplexF32.(mybox .* exp.((1im .* 2π/λ * aleph) .* xx(sz) .* pixelsize[1])); # box(sz,(111,111)) .* 
-	# mask = ComplexF32.(mybox)
+	
+	# create an object with a box and a disc and phase slopes such that the center of their slanted beams meet at z0
+	src_ctr = (sz[1]÷4 + 1)
+	# box  pos from the middle in pixels
+	rel_box_pos = (box_center[1] .- src_ctr)
+	box_dest_pos = M2*rel_box_pos
+	alpha_xb = atand((box_dest_pos .- rel_box_pos)*pixelsize[1],z0) # 20.51 deg
+	aleph_box = sind(alpha_xb) # sind(25) # sind(40)  #25
+	mask_box = ComplexF32.(mybox .* exp_ikx(sz.÷2, shift_by= .- aleph_box .* (sz.÷4))); # box(sz,(111,111)) .* 
+	
+	disc_center = ((sz.÷2) .*0.1)
+	mydisc = conv_psf(disc(sz.÷2, (sz.÷2) .÷ 20, offset=disc_center), gaussian(sz.÷2, sigma=(2.0,2.0)))
+	# angle along xz
+	alpha_xd = atand((box_dest_pos .- (disc_center[1].-src_ctr))*pixelsize[1],z0) # 22.71 deg
+	aleph_disc = sind(alpha_xd) # sind(38.7) # sind(40)  #25
+	mask_disc = ComplexF32.(mydisc .* exp_ikx(sz.÷2, shift_by= .-(aleph_disc .* (sz.÷4)))); # disc 
 
-	#mask = mybox .* ComplexF32.(exp.(1im .* π .* mask_im ./0.855)); # box(sz,(111,111)) .* 
-	mask = ComplexF32.(mybox .* exp_ikx(sz.÷2, shift_by= .- 10^6 .* aleph / 1.5 .* (sz.÷2) .* λ)); # box(sz,(111,111)) .* 
-
-	mybox2 = conv_psf(disc(sz.÷2, (sz.÷2) .÷ 20, offset=((sz.÷2) .*0.1)), gaussian(sz.÷2, sigma=(2.0,2.0)))
-	aleph2 = sind(28) # sind(40)  #25
-	mask2 = ComplexF32.(mybox2 .* exp_ikx(sz.÷2, shift_by= 10^6 .* aleph2 / 1.5 .* (sz.÷2) .* λ)); # box(sz,(111,111)) .* 
 end
 
 # ╔═╡ 82b67338-4474-4501-a1ba-4ae060bb4baa
-simshow(mask .+ mask2)
+simshow(mask_disc .+ mask_box)
 
 # ╔═╡ 242ac622-de2c-481b-a996-31a5a026d6de
-simshow(abs2.(scaled_angular_spectrum(mask .+ mask2, z0, λ, L2[1])[1]), γ=0.2)
+simshow(abs2.(scaled_angular_spectrum(mask_disc .+ mask_box, z0, λ, L2[1]/2)[1]), γ=0.2)
 
 # ╔═╡ 3fb4d3fc-e753-45a6-bed9-bad62a3708c6
 
-
-# ╔═╡ c77ebf5e-be51-4719-8616-4b15010afc4c
-
-
-# ╔═╡ bd2fcfe8-fcd6-48ab-bbf1-b5b027613db6
-
-
-# ╔═╡ 26519739-a0f5-45be-a0ca-acfacfdb7f95
-
-
-# ╔═╡ 8cf8a3b4-5271-4012-b8f3-8e8e0e5c2993
-
-
-# ╔═╡ 81558914-1e9d-47d4-9bdc-c7eb0b0fe364
-
-
-# ╔═╡ 2d3ec9a1-37e3-4c87-8800-fd41714e4af3
-
-
-# ╔═╡ dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
-sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=true)
-
-# ╔═╡ 32600ad2-af2f-418a-93ed-bd8cc2095198
-# ╠═╡ disabled = true
-#=╠═╡
-sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=true)
-  ╠═╡ =#
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -562,9 +547,9 @@ PlutoUI = "~0.7.48"
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.8.5"
+julia_version = "1.8.2"
 manifest_format = "2.0"
-project_hash = "81b86a54008070d36032012869729844f74ad42c"
+project_hash = "e01cdfb2475f2e1a8eac34fb5f2d661b832c1e3d"
 
 [[deps.ATK_jll]]
 deps = ["Artifacts", "Glib_jll", "JLLWrappers", "Libdl", "Pkg"]
@@ -719,7 +704,7 @@ version = "4.3.0"
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
-version = "1.0.1+0"
+version = "0.5.2+0"
 
 [[deps.CompositionsBase]]
 git-tree-sha1 = "455419f7e328a1a2493cabc6428d79e951349769"
@@ -2174,11 +2159,5 @@ version = "1.4.1+0"
 # ╠═82b67338-4474-4501-a1ba-4ae060bb4baa
 # ╠═242ac622-de2c-481b-a996-31a5a026d6de
 # ╠═3fb4d3fc-e753-45a6-bed9-bad62a3708c6
-# ╠═c77ebf5e-be51-4719-8616-4b15010afc4c
-# ╠═bd2fcfe8-fcd6-48ab-bbf1-b5b027613db6
-# ╠═26519739-a0f5-45be-a0ca-acfacfdb7f95
-# ╠═8cf8a3b4-5271-4012-b8f3-8e8e0e5c2993
-# ╠═81558914-1e9d-47d4-9bdc-c7eb0b0fe364
-# ╠═2d3ec9a1-37e3-4c87-8800-fd41714e4af3
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
