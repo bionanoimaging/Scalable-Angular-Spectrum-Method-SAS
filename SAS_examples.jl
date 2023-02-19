@@ -451,18 +451,6 @@ simshow(abs.(resample(abs2.(sft_fr_box[1]), M_box .* (N_box, N_box))), γ=0.13, 
 # ╔═╡ 9c46ad96-96ac-4d40-bfec-d146451f1130
 simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
 
-# ╔═╡ f2c75c53-9228-43c7-983e-2174dd922131
-
-
-# ╔═╡ 8b88a6ef-c30c-4924-a316-64035727bdf8
-
-
-# ╔═╡ b15dc45f-5755-4b26-bfee-df5c45cea527
-
-
-# ╔═╡ 41e06721-4d33-4f28-902e-e66864e0673c
-
-
 # ╔═╡ 6fe0ebef-6705-47db-a7ff-0d82bfa8eb43
 begin
 	# size of field (without padding)
@@ -500,7 +488,7 @@ begin
 	aleph_disc = sind(alpha_xd) # sind(38.7) # sind(40)  #25
 	mask_disc = ComplexF32.(mydisc .* exp_ikx(sz.÷2, shift_by= .-(aleph_disc .* k_max))); # disc 
 
-end
+end;
 
 # ╔═╡ 82b67338-4474-4501-a1ba-4ae060bb4baa
 simshow(mask_disc .+ mask_box)
@@ -512,7 +500,7 @@ simshow(abs2.(scaled_angular_spectrum(0.0 .* mask_disc .+ mask_box, z0, λ, L2[1
 md"Some problem for the `mask_box`!"
 
 # ╔═╡ 3fb4d3fc-e753-45a6-bed9-bad62a3708c6
-md"# High NA, Short Distance"
+md"# High NA, Small Pixels, Short Distance"
 
 # ╔═╡ 13352412-89f2-463a-9bc7-104b5c682942
 begin
@@ -543,7 +531,7 @@ begin
 	println("α=$(alpha_xbb), NA = $(aleph_boxb)")
 
 	mask_boxb = ComplexF32.(myboxb .* exp_ikx(szb.÷2, shift_by= .- aleph_boxb .* k_maxb)); # box(sz,(111,111)) .* 
-end
+end;
 
 # ╔═╡ 7d35496e-d68c-4c50-8634-6b324392a5db
 simshow(mask_boxb)
@@ -2193,14 +2181,10 @@ version = "1.4.1+0"
 # ╠═b3e31f75-5216-47b5-85b3-026a0321c0a8
 # ╠═dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
 # ╠═9c46ad96-96ac-4d40-bfec-d146451f1130
-# ╠═f2c75c53-9228-43c7-983e-2174dd922131
-# ╠═8b88a6ef-c30c-4924-a316-64035727bdf8
-# ╠═b15dc45f-5755-4b26-bfee-df5c45cea527
-# ╠═41e06721-4d33-4f28-902e-e66864e0673c
 # ╠═6fe0ebef-6705-47db-a7ff-0d82bfa8eb43
 # ╠═82b67338-4474-4501-a1ba-4ae060bb4baa
 # ╠═242ac622-de2c-481b-a996-31a5a026d6de
-# ╠═40d90094-6657-4f5d-aef5-f70562135823
+# ╟─40d90094-6657-4f5d-aef5-f70562135823
 # ╟─3fb4d3fc-e753-45a6-bed9-bad62a3708c6
 # ╠═13352412-89f2-463a-9bc7-104b5c682942
 # ╠═7d35496e-d68c-4c50-8634-6b324392a5db
