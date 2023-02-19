@@ -469,12 +469,12 @@ begin
 	sz = (512, 512) 
 	# 0.25 is the theoretical minimum
 	pixelsize = 0.5 .* (λ,λ)
-	M2 = 10 # magnification
+	M2 = 2*5.44 # magnification
 	Δ = (pixelsize.^2 .* sz ./ λ)[1] # propagation distance for M==1
 	z0 = Δ .* M2 # M is the magnification. z0 is the total distance to propagate
 	L2 = pixelsize .* sz # padded size
 
-	maxZL(R)=4*R/(1/R-2*sqrt(2)/sqrt(1+8*R^2)) # maximum Z/L as a function of pix/λ
+	maxZL(R)=2*4*R/(1/R-2*sqrt(2)/sqrt(1+8*R^2)) # maximum Z/L as a function of pix/λ
 	R = pixelsize[1]/λ
 	println("M = $M2, pix/λ=$(R), max z/L= $(maxZL(R)) z/L = $(z0 / (L2[1]/2))")
 	
