@@ -469,9 +469,9 @@ begin
 	sz = (512, 512) 
 	# 0.25 is the theoretical minimum
 	pixelsize = 0.5 .* (λ,λ)
-	M2 = 18 # magnification
+	M2 = 10 # magnification
 	Δ = (pixelsize.^2 .* sz ./ λ)[1] # propagation distance for M==1
-	z0 = Δ .* M # M is the magnification. z0 is the total distance to propagate
+	z0 = Δ .* M2 # M is the magnification. z0 is the total distance to propagate
 	L2 = pixelsize .* sz # padded size
 
 	maxZL(R)=4*R/(1/R-2*sqrt(2)/sqrt(1+8*R^2)) # maximum Z/L as a function of pix/λ
@@ -490,7 +490,7 @@ begin
 	box_dest_pos = M2*rel_box_pos
 	alpha_xb = atand((box_dest_pos .- rel_box_pos)*pixelsize[1],z0) # 20.51 deg
 	aleph_box = sind(alpha_xb) # sind(25) # sind(40)  #25
-	k_max = sz.÷2 .*pixelsize./λ./2
+	k_max = sz.÷2 .*pixelsize./λ
 	mask_box = ComplexF32.(mybox .* exp_ikx(sz.÷2, shift_by= .- aleph_box .* k_max)); # box(sz,(111,111)) .* 
 	
 	disc_center = ((sz.÷2) .*0.1)
@@ -506,10 +506,53 @@ end
 simshow(mask_disc .+ mask_box)
 
 # ╔═╡ 242ac622-de2c-481b-a996-31a5a026d6de
-simshow(abs2.(scaled_angular_spectrum(mask_disc .+ mask_box, z0, λ, L2[1]/2 )[1]), γ=0.2)
+simshow(abs2.(scaled_angular_spectrum(0.0 .* mask_disc .+ mask_box, z0, λ, L2[1]/2 )[1]), γ=0.2)
+
+# ╔═╡ 40d90094-6657-4f5d-aef5-f70562135823
+md"Some problem for the `mask_box`!"
 
 # ╔═╡ 3fb4d3fc-e753-45a6-bed9-bad62a3708c6
+md"# High NA, Short Distance"
 
+# ╔═╡ 13352412-89f2-463a-9bc7-104b5c682942
+begin
+	# size of field (without padding)
+	szb = (512, 512) 
+	# 0.25 is the theoretical minimum
+	pixelsize_b = 0.15 .* (λ,λ)
+	Mb = 1 # magnification, should be one!
+	Δb = (pixelsize_b.^2 .* sz ./ λ)[1] # propagation distance for M==1
+	zb = Δb .* Mb # M is the magnification. z0 is the total distance to propagate
+	Lb = pixelsize_b .* szb # padded size
+	Rb = pixelsize_b[1]/λ
+	println("M = $Mb, pix/λ=$(Rb), max z/L= $(maxZL(Rb)) z/L = $(zb / (Lb[1]/2))")
+
+	box_start = ((szb.÷2) .*0.1)
+
+	myboxb = conv_psf(box(szb.÷2, (szb.÷2) .÷ 10, offset=box_start), gaussian(szb.÷2, sigma=(2.0,2.0)))
+	
+	# create an object with a box and a disc and phase slopes such that the center of their slanted beams meet at z0
+	src_ctrb = (szb[1]÷4 + 1)
+	# box  pos from the middle in pixels
+	box_dest = ((szb.÷2) .*0.9)
+	rel_box_posb = (box_dest[1] .- src_ctrb)
+	box_dest_posb = Mb*rel_box_posb
+	alpha_xbb = atand((box_dest_posb .- (box_start[1].-src_ctrb))*pixelsize_b[1],zb)  
+	aleph_boxb =  sind(alpha_xbb) # sind(25) # sind(40)  #25
+	k_maxb = szb.÷2 .*pixelsize_b./λ
+	println("α=$(alpha_xbb), NA = $(aleph_boxb)")
+
+	mask_boxb = ComplexF32.(myboxb .* exp_ikx(szb.÷2, shift_by= .- aleph_boxb .* k_maxb)); # box(sz,(111,111)) .* 
+end
+
+# ╔═╡ 7d35496e-d68c-4c50-8634-6b324392a5db
+simshow(mask_boxb)
+
+# ╔═╡ 17120989-dcbd-4786-aa5d-1e1847d0f247
+simshow(abs2.(scaled_angular_spectrum(mask_boxb, zb, λ, Lb[1]/2 )[1]), γ=0.2)
+
+# ╔═╡ 1c94e5ab-45a1-433a-80b2-4c7c469ca6b9
+simshow(abs2.(angular_spectrum(mask_boxb, zb, λ, Lb[1]/2)[1]), γ=0.2)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -2109,7 +2152,7 @@ version = "1.4.1+0"
 # ╠═02cddba9-a561-4360-bfe4-805f7bf53251
 # ╠═e53711d2-68ed-4712-82ba-c11bc14ffab3
 # ╠═e05c6882-81f9-4784-ab7e-7a9a8d296b6d
-# ╟─45e9dad4-8f26-45c6-b58e-93d634881f60
+# ╠═45e9dad4-8f26-45c6-b58e-93d634881f60
 # ╠═71f123f7-0b47-427c-b96f-d80d80907434
 # ╠═adfcc771-e092-4dd3-8ff9-9a940c1c29a3
 # ╟─2c6d0d9b-9617-40d3-859d-4c5de8cafbd7
@@ -2157,6 +2200,11 @@ version = "1.4.1+0"
 # ╠═6fe0ebef-6705-47db-a7ff-0d82bfa8eb43
 # ╠═82b67338-4474-4501-a1ba-4ae060bb4baa
 # ╠═242ac622-de2c-481b-a996-31a5a026d6de
-# ╠═3fb4d3fc-e753-45a6-bed9-bad62a3708c6
+# ╠═40d90094-6657-4f5d-aef5-f70562135823
+# ╟─3fb4d3fc-e753-45a6-bed9-bad62a3708c6
+# ╠═13352412-89f2-463a-9bc7-104b5c682942
+# ╠═7d35496e-d68c-4c50-8634-6b324392a5db
+# ╠═17120989-dcbd-4786-aa5d-1e1847d0f247
+# ╠═1c94e5ab-45a1-433a-80b2-4c7c469ca6b9
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
