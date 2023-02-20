@@ -457,14 +457,20 @@ begin
 	sz = (512, 512) 
 	# 0.25 is the theoretical minimum
 	pixelsize = 0.5 .* (λ,λ)
-	M2 = 2*5.44 # magnification
-	Δ = (pixelsize.^2 .* sz ./ λ)[1] # propagation distance for M==1
+	M2 = 10 # 2*5.44 # magnification
+	Δ = (2 .* pixelsize.^2 .* (sz.÷2) ./ λ)[1] # propagation distance for M==1
 	z0 = Δ .* M2 # M is the magnification. z0 is the total distance to propagate
 	L2 = pixelsize .* sz # padded size
+	LL = L2[1]/2
+	NN = sz[1]/2
 
-	maxZL(R)=2*4*R/(1/R-2*sqrt(2)/sqrt(1+8*R^2)) # maximum Z/L as a function of pix/λ
+	# Limit (Felix's equation)
+	z_limit_F = (4 * LL * sqrt(8*LL^2 / NN^2 + λ^2) * sqrt(LL^2 * inv(8 * LL^2 + NN^2 * λ^2)) / (λ * (1-2 * sqrt(2) * sqrt(LL^2 * inv(8 * LL^2 + NN^2 * λ^2)))))
+
+	# Limit (Rainer's equation)
+	maxZL(R)=4/(1/R-2*sqrt(2)/sqrt(1+8*R^2)) # maximum Z/L as a function of pix/λ
 	R = pixelsize[1]/λ
-	println("M = $M2, pix/λ=$(R), max z/L= $(maxZL(R)) z/L = $(z0 / (L2[1]/2))")
+	println("M = $M2, R=$R, L=$(LL), Δ=$(Δ), z=$(z0), pix/λ=$(R), max R z/L= $(maxZL(R)) z/L = $(z0 / (L2[1]/2)), max F: $(z_limit_F/LL)")
 	
 	box_center = ((sz.÷2) .*0.9)
 	mybox = conv_psf(box(sz.÷2, (sz.÷2) .÷ 10, offset=box_center), gaussian(sz.÷2, sigma=(2.0,2.0)))
@@ -489,6 +495,9 @@ begin
 	mask_disc = ComplexF32.(mydisc .* exp_ikx(sz.÷2, shift_by= .-(aleph_disc .* k_max))); # disc 
 
 end;
+
+# ╔═╡ 2e800b25-43da-4dba-8548-5a4ba08550ff
+
 
 # ╔═╡ 82b67338-4474-4501-a1ba-4ae060bb4baa
 simshow(mask_disc .+ mask_box)
@@ -2182,6 +2191,7 @@ version = "1.4.1+0"
 # ╠═dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
 # ╠═9c46ad96-96ac-4d40-bfec-d146451f1130
 # ╠═6fe0ebef-6705-47db-a7ff-0d82bfa8eb43
+# ╠═2e800b25-43da-4dba-8548-5a4ba08550ff
 # ╠═82b67338-4474-4501-a1ba-4ae060bb4baa
 # ╠═242ac622-de2c-481b-a996-31a5a026d6de
 # ╟─40d90094-6657-4f5d-aef5-f70562135823
