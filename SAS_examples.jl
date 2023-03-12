@@ -298,19 +298,22 @@ z_circ
 simshow(U_circ)
 
 # ╔═╡ 77f6528c-cf26-465e-a5bd-7bd336e1b4bc
-as_circ = angular_spectrum(select_region(U_circ, new_size=round.(Int, size(U_circ) .* M)), z_circ, λ, L * M)
+@time as_circ = angular_spectrum(select_region(U_circ, new_size=round.(Int, size(U_circ) .* M)), z_circ, λ, L * M)
 
 # ╔═╡ 3524374c-97f0-4cdd-88cd-7ffbdb52834c
 simshow(as_circ[1], γ=1)
 
 # ╔═╡ dd434bfd-c14d-4417-922a-01a573c44143
-sft_fr_circ = fresnel(resample(U_circ,size(U_circ).÷2), z_circ, λ, L, skip_final_phase=false)
+@time sft_fr_circ = fresnel(resample(U_circ,size(U_circ).÷2), z_circ, λ, L, skip_final_phase=false)
 
 # ╔═╡ 49c66347-dfdb-462e-84e4-92aaef26891e
 simshow(resample(select_region(sft_fr_circ[1], new_size=(N, N).÷2), (N, N)))
 
 # ╔═╡ 6af0bc99-4245-44f8-bc45-405f9e56b513
-sas_circ = scaled_angular_spectrum(U_circ, z_circ, λ, L, skip_final_phase=false)
+@time sas_circ = scaled_angular_spectrum(U_circ, z_circ, λ, L, skip_final_phase=false)
+
+# ╔═╡ d494c7fc-a165-41ad-9634-0efbe628750a
+@time fresnel(U_circ, z_circ, λ, L, skip_final_phase=false)[1]
 
 # ╔═╡ d5fdc880-6d6a-4bb1-9167-f16340361897
 simshow(resample(sas_circ[1], M .* (N,N)))
@@ -350,22 +353,31 @@ The Fresnel number is $(round((D_box)^2 / z_box / λ, digits=3))
 simshow(U_box)
 
 # ╔═╡ 9d78321e-6586-4c31-bec7-279d23c79841
-as_box = angular_spectrum(select_region(U_box, new_size=round.(Int, size(U_box) .* M_box)), z_box, λ, L_box * M_box)
+@time as_box = angular_spectrum(select_region(U_box, new_size=round.(Int, size(U_box) .* M_box)), z_box, λ, L_box * M_box)
 
 # ╔═╡ d128d0ec-61bd-46a2-a915-e42220cd09cc
 simshow(abs2.(as_box[1]), γ=0.13, cmap=:inferno)
 
-# ╔═╡ b3e31f75-5216-47b5-85b3-026a0321c0a8
-sas_box = scaled_angular_spectrum(U_box, z_box, λ, L_box, skip_final_phase=true)
-
 # ╔═╡ dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
-sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=true)
+@time sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=true)
+
+# ╔═╡ a2ac2498-7c68-47c7-8a86-227da43cf482
+@time fresnel(U_box, z_box, λ, L_box, skip_final_phase=true)
 
 # ╔═╡ ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
 simshow(abs.(resample(abs2.(sft_fr_box[1]), M_box .* (N_box, N_box))), γ=0.13, cmap=:inferno)
 
+# ╔═╡ b3e31f75-5216-47b5-85b3-026a0321c0a8
+@time sas_box = scaled_angular_spectrum(U_box, z_box, λ, L_box, skip_final_phase=true)
+
 # ╔═╡ 9c46ad96-96ac-4d40-bfec-d146451f1130
 simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
+
+# ╔═╡ 7ae68d67-531f-4eb9-abc7-50d9acaeb5f7
+
+
+# ╔═╡ 79fb5df8-a06c-48ce-b25f-1f8ff345e39a
+md"# More Examples"
 
 # ╔═╡ 6fe0ebef-6705-47db-a7ff-0d82bfa8eb43
 begin
@@ -425,7 +437,7 @@ simshow(abs2.(scaled_angular_spectrum(0.0 .* mask_disc .+ mask_box, z0, λ, L2[1
 md"Some problem for the `mask_box`!"
 
 # ╔═╡ 3fb4d3fc-e753-45a6-bed9-bad62a3708c6
-md"# High NA, Small Pixels, Short Distance"
+md"## High NA, Small Pixels, Short Distance"
 
 # ╔═╡ 13352412-89f2-463a-9bc7-104b5c682942
 begin
@@ -2088,6 +2100,7 @@ version = "1.4.1+0"
 # ╠═dd434bfd-c14d-4417-922a-01a573c44143
 # ╠═49c66347-dfdb-462e-84e4-92aaef26891e
 # ╠═6af0bc99-4245-44f8-bc45-405f9e56b513
+# ╠═d494c7fc-a165-41ad-9634-0efbe628750a
 # ╠═d5fdc880-6d6a-4bb1-9167-f16340361897
 # ╟─1815437a-332c-4bc1-9b72-b75cd4b8b653
 # ╠═d623e68d-8cfd-4df8-af30-396097ddc6aa
@@ -2102,9 +2115,12 @@ version = "1.4.1+0"
 # ╠═9d78321e-6586-4c31-bec7-279d23c79841
 # ╠═d128d0ec-61bd-46a2-a915-e42220cd09cc
 # ╠═dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
+# ╠═a2ac2498-7c68-47c7-8a86-227da43cf482
 # ╠═ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
 # ╠═b3e31f75-5216-47b5-85b3-026a0321c0a8
 # ╠═9c46ad96-96ac-4d40-bfec-d146451f1130
+# ╠═7ae68d67-531f-4eb9-abc7-50d9acaeb5f7
+# ╟─79fb5df8-a06c-48ce-b25f-1f8ff345e39a
 # ╠═6fe0ebef-6705-47db-a7ff-0d82bfa8eb43
 # ╠═2e800b25-43da-4dba-8548-5a4ba08550ff
 # ╠═82b67338-4474-4501-a1ba-4ae060bb4baa
