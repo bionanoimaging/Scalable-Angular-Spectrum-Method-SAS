@@ -175,27 +175,27 @@ Returns the the electrical field with physical length `L` and wavelength `λ` pr
 	
 	#Q_x = fftpos(dq * N, N, CenterFT)
 	q_y = similar(field, N)
-	#q_y .= ifftshift(fftpos(dq * N, N, CenterFT))
-	q_y .= ifftshift(range(-Q/2, Q/2, length=N))
+	q_y .= ifftshift(fftpos(dq * N, N, CenterFT))
+	#q_y .= ifftshift(range(-Q/2, Q/2, length=N))
 	q_x = q_y'
 	
 	# calculate phases of Fresnel
-	H₁ = exp.(1im .* k ./ (2 .* z) .* (x .^ 2 .+ y .^ 2))
-	H₂ = (exp.(1im .* k .* z) .*
+	Q₁ = exp.(1im .* k ./ (2 .* z) .* (x .^ 2 .+ y .^ 2))
+	Q₂ = (exp.(1im .* k .* z) .*
 			 exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
 	
 	# skips multiplication of final phase
 	if skip_final_phase
-		field_out = fftshift(fft(ifftshift(field_new) .* H₁))
+		field_out = fftshift(fft(ifftshift(field_new) .* Q₁))
 	else
-		field_out = fftshift(fft(ifftshift(field_new) .* H₁) .* H₂)
+		field_out = fftshift(fft(ifftshift(field_new) .* Q₁) .* Q₂)
 	end
 	
 	# fix scaling
 	field_out .*= 1 / (1im * T(sqrt(length(field_out)))) 
 	
 	# transfer function kernel of angular spectrum
-	return field_out, (; L=Q)
+	return field_out, (; L=Q, Q₁, Q₂)
 end
 
 # ╔═╡ 4db3a990-4e5d-4fe7-89cc-4823d1b5b592
@@ -301,13 +301,13 @@ simshow(U_circ)
 @time as_circ = angular_spectrum(select_region(U_circ, new_size=round.(Int, size(U_circ) .* M)), z_circ, λ, L * M)
 
 # ╔═╡ 3524374c-97f0-4cdd-88cd-7ffbdb52834c
-simshow(as_circ[1], γ=1)
+simshow(abs2.(as_circ[1]), γ=1)
 
 # ╔═╡ dd434bfd-c14d-4417-922a-01a573c44143
 @time sft_fr_circ = fresnel(resample(U_circ,size(U_circ).÷2), z_circ, λ, L, skip_final_phase=false)
 
 # ╔═╡ 49c66347-dfdb-462e-84e4-92aaef26891e
-simshow(resample(select_region(sft_fr_circ[1], new_size=(N, N).÷2), (N, N)))
+simshow(abs2.(resample(select_region(sft_fr_circ[1], new_size=(N, N).÷2), (N, N))))
 
 # ╔═╡ 6af0bc99-4245-44f8-bc45-405f9e56b513
 @time sas_circ = scaled_angular_spectrum(U_circ, z_circ, λ, L, skip_final_phase=false)
@@ -316,7 +316,7 @@ simshow(resample(select_region(sft_fr_circ[1], new_size=(N, N).÷2), (N, N)))
 @time fresnel(U_circ, z_circ, λ, L, skip_final_phase=false)[1]
 
 # ╔═╡ d5fdc880-6d6a-4bb1-9167-f16340361897
-simshow(resample(sas_circ[1], M .* (N,N)))
+simshow(abs2.(resample(sas_circ[1], M .* (N,N))))
 
 # ╔═╡ d623e68d-8cfd-4df8-af30-396097ddc6aa
 L_box = 128e-6;
@@ -478,6 +478,63 @@ simshow(abs2.(scaled_angular_spectrum(mask_boxb, zb, λ, Lb[1]/2)[1]), γ=0.2)
 
 # ╔═╡ 1c94e5ab-45a1-433a-80b2-4c7c469ca6b9
 simshow(abs2.(angular_spectrum(mask_boxb, zb, λ, Lb[1]/2)[1]), γ=0.2)
+
+# ╔═╡ 12a5f0bf-bf77-4430-b4ea-dcf7656171e7
+size(mask_boxb, 1) * λ * zb / (Lb[1] / 2)^2
+
+# ╔═╡ 63524474-1553-4d6d-9c1a-8dabe2503c53
+simshow(abs2.(fresnel(mask_boxb, zb, λ, Lb[1]/2)[1]), γ=0.2)
+
+# ╔═╡ f169a37e-a669-43da-b98b-eebffcfaf8a2
+simshow(abs.(resample(abs2.(fresnel(resample(mask_boxb, size(mask_boxb) .÷ 2), zb, λ, Lb[1]/2)[1]), size(mask_boxb))), γ=0.2)
+
+# ╔═╡ 59cd1971-69a3-4851-bfa3-be393fd3ebcb
+mask_boxb
+
+# ╔═╡ 77df0823-d7e3-4216-9f24-ee00fd6b4d22
+simshow(mask_boxb)
+
+# ╔═╡ cfa7b2e5-a2b9-4a75-bc32-46a50fd62624
+U_circ2 = ComplexF64.(rr((N, N)) .< D_circ / 2)
+
+# ╔═╡ 82a17f2a-28a1-43f8-a197-b1664e6d4c49
+simshow(U_circ2)
+
+# ╔═╡ 833fd1e6-70d0-4683-bfec-3f0d7f294fb0
+rr((4,4)) .< 1
+
+# ╔═╡ 1979dde7-79f8-4d07-a245-fd82aff8a250
+@time res2 = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=false)
+
+# ╔═╡ b87c48cc-1e30-4b49-9c46-1b332bf1ba82
+
+
+# ╔═╡ 19793963-adbb-449f-8a65-7dafb1647e85
+λ * z_circ
+
+# ╔═╡ 148899c9-c859-4a96-9d09-9d80e168b07b
+L^2 / z_circ / λ / (size(U_circ2, 1) / 2)
+
+# ╔═╡ dfcc6c59-a913-4404-8bc7-6ab1ceea1e7f
+L_new = size(U_circ2, 1) / 2 * λ * z_circ / L
+
+# ╔═╡ fe320331-1c1d-4aff-aec2-1c93944005bb
+L_new^2 / z_circ / λ / (size(U_circ2, 1) / 2)
+
+# ╔═╡ a0f58601-a5ec-4576-a49d-1e5af1b3df90
+@time sft_fr_circ2 = fresnel(resample(U_circ2,size(U_circ2).÷2), z_circ * 0.25, λ, L, skip_final_phase=false)
+
+# ╔═╡ d188d763-5f67-4d8d-8a1f-bbe5682241e8
+simshow(sft_fr_circ2[1], γ=0.1)
+
+# ╔═╡ a9e1fb74-f04b-4a9f-9b7b-4e298d57ee1d
+simshow(fftshift(sft_fr_circ2[2].Q₂))
+
+# ╔═╡ 7a258aed-4b48-4e43-a7a5-80e17103ca80
+simshow(fftshift(sft_fr_circ2[2].Q₁))
+
+# ╔═╡ 7e7598ff-eec3-4dda-95f2-b6a3df1b79fa
+sft_fr_circ2[2].L / L
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -2131,5 +2188,24 @@ version = "1.4.1+0"
 # ╠═7d35496e-d68c-4c50-8634-6b324392a5db
 # ╠═17120989-dcbd-4786-aa5d-1e1847d0f247
 # ╠═1c94e5ab-45a1-433a-80b2-4c7c469ca6b9
+# ╠═12a5f0bf-bf77-4430-b4ea-dcf7656171e7
+# ╠═63524474-1553-4d6d-9c1a-8dabe2503c53
+# ╠═f169a37e-a669-43da-b98b-eebffcfaf8a2
+# ╠═59cd1971-69a3-4851-bfa3-be393fd3ebcb
+# ╠═77df0823-d7e3-4216-9f24-ee00fd6b4d22
+# ╠═cfa7b2e5-a2b9-4a75-bc32-46a50fd62624
+# ╠═82a17f2a-28a1-43f8-a197-b1664e6d4c49
+# ╠═833fd1e6-70d0-4683-bfec-3f0d7f294fb0
+# ╠═1979dde7-79f8-4d07-a245-fd82aff8a250
+# ╠═d188d763-5f67-4d8d-8a1f-bbe5682241e8
+# ╠═b87c48cc-1e30-4b49-9c46-1b332bf1ba82
+# ╠═19793963-adbb-449f-8a65-7dafb1647e85
+# ╠═a9e1fb74-f04b-4a9f-9b7b-4e298d57ee1d
+# ╠═7a258aed-4b48-4e43-a7a5-80e17103ca80
+# ╠═7e7598ff-eec3-4dda-95f2-b6a3df1b79fa
+# ╠═148899c9-c859-4a96-9d09-9d80e168b07b
+# ╠═fe320331-1c1d-4aff-aec2-1c93944005bb
+# ╠═dfcc6c59-a913-4404-8bc7-6ab1ceea1e7f
+# ╠═a0f58601-a5ec-4576-a49d-1e5af1b3df90
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
