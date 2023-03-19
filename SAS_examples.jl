@@ -181,13 +181,13 @@ Returns the the electrical field with physical length `L` and wavelength `λ` pr
 	
 	# calculate phases of Fresnel
 	Q₁ = exp.(1im .* k ./ (2 .* z) .* (x .^ 2 .+ y .^ 2))
-	Q₂ = (exp.(1im .* k .* z) .*
-			 exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
-	
+
 	# skips multiplication of final phase
 	if skip_final_phase
 		field_out = fftshift(fft(ifftshift(field_new) .* Q₁))
 	else
+		Q₂ = (exp.(1im .* k .* z) .*
+			 exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
 		field_out = fftshift(fft(ifftshift(field_new) .* Q₁) .* Q₂)
 	end
 	
@@ -262,12 +262,13 @@ function scaled_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 	
 	# calculate phases of Fresnel
 	H₁ = exp.(1im .* k ./ (2 .* z) .* (x .^ 2 .+ y .^ 2))
-	H₂ = (exp.(1im .* k .* z) .*
-			 exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
+
 	
 	if skip_final_phase
 		ψ_p_final = fftshift(fft(H₁ .* ψ_precomp))
 	else
+		H₂ = (exp.(1im .* k .* z) .*
+			 exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
 		ψ_p_final = fftshift(H₂ .* fft(H₁ .* ψ_precomp))
 	end
 	
@@ -376,8 +377,105 @@ simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
 # ╔═╡ 7ae68d67-531f-4eb9-abc7-50d9acaeb5f7
 
 
+# ╔═╡ 2e800b25-43da-4dba-8548-5a4ba08550ff
+
+
+# ╔═╡ 391ace06-0544-40ad-9b99-5a79a9304361
+
+
+# ╔═╡ a31e12c0-2deb-4703-968d-bf9a6a8f7cc2
+md"# Third Double Slit Example"
+
+# ╔═╡ 2c7460e0-3735-427b-ba88-8e58484b4af8
+N_slit = 1024
+
+# ╔═╡ d9ddaf9f-5775-42d2-8f57-e389b23537bd
+
+
+# ╔═╡ da62e118-2813-4387-97fb-6dbcfb0ac5b2
+
+
+# ╔═╡ 08c3bd5a-3735-4346-936b-7557f8b01949
+slit = box((N_slit, N_slit), (N_slit, 6), offset=(512, 512 - 128)) .+  box((N_slit, N_slit), (N_slit, 6), offset=(512, 512 + 128));
+
+# ╔═╡ 2bd72c9e-7a09-4134-8981-613ac49baef7
+L_slit = λ * 6 * size(slit, 1)
+
+# ╔═╡ a866acde-6738-4fed-8b87-b55451a4aacd
+z_slit = 1000 * L_slit
+
+# ╔═╡ b910cbeb-3155-440e-9793-ddb99fdf6520
+M_slit = z_slit * λ / L_slit^2 * N_slit / 2
+
+# ╔═╡ 215461fd-9b2a-4fd1-a394-0def6b654b6e
+xpos = fftpos(L_slit * M_slit, N_slit, NDTools.CenterFT)
+
+# ╔═╡ d0962d9c-f42d-43e6-9397-0c741922feac
+sinθ = sin.(atan.(xpos, z_slit))
+
+# ╔═╡ fea1a634-a069-4305-b2df-6222117b2f67
+b = L_slit / N_slit * 6
+
+# ╔═╡ a63e9145-ef2c-4bf2-bfdf-04b0ff32b25f
+d = 256 * L_slit / N_slit
+
+# ╔═╡ 89155d2a-f8b7-43c1-a6a4-9e9372ac08b8
+slit_analytical = cos.(π .* d .* sinθ ./ λ).^2 .* sinc.(b .* sinθ ./ λ).^2
+
+# ╔═╡ 4306ba36-dace-4a4f-bf24-508db355dd96
+slit2 = box((N_slit ÷2, N_slit ÷2), (N_slit ÷ 2, 3), offset=(512, 512 - 128).÷2) .+  box((N_slit ÷2, N_slit ÷2), (N_slit ÷ 2, 3), offset=(512, 512 + 128).÷2);
+
+# ╔═╡ 71925a3f-3165-4685-91d3-317fb1a17a82
+simshow(slit)
+
+# ╔═╡ 7551da12-4ca9-4cdc-b3fc-596e4d00aac0
+simshow(slit2)
+
+# ╔═╡ 2fa8f6d5-b140-4072-a82f-5b84f2efca55
+N_slit * z_slit * λ / L_slit^2
+
+# ╔═╡ 2802e2ad-f223-44df-95bf-0b4fbc145090
+begin
+	slit_SAS = abs2.(scaled_angular_spectrum(slit, z_slit, λ, L_slit)[1][513, :]);
+	
+	slit_SAS ./= maximum(slit_SAS)
+end
+
+# ╔═╡ 2a944f76-9f2d-4a98-a1a1-0c59363d7adc
+simshow(slit_SAS)
+
+# ╔═╡ 30782540-1034-43d0-9831-c665503b41e8
+begin
+	slit_fresnel = abs2.(fresnel(slit2, z_slit, λ, L_slit)[1][257, :])
+	
+	slit_fresnel ./= maximum(slit_fresnel)
+end
+
+# ╔═╡ 99b01768-3364-440a-862d-1cfe278278fa
+begin
+	plot(fftpos(L_slit, N_slit, CenterFT), slit_analytical)
+	#plot!(fftpos(L_slit, N_slit ÷ 2, CenterFT), slit_fresnel, linewidth=0.5)
+	plot!(fftpos(L_slit, N_slit, CenterFT), slit_SAS)
+
+end
+
+# ╔═╡ 148a84c0-d09e-4c13-95fc-a5ed6b80953b
+maximum(slit_SAS)
+
+# ╔═╡ 09248cd4-9463-4de7-a597-18480575c065
+maximum(slit_SAS[5, :])
+
+# ╔═╡ a60479d7-4ac1-4d2c-ae42-7c37635f021e
+findmax(slit_SAS)
+
 # ╔═╡ 79fb5df8-a06c-48ce-b25f-1f8ff345e39a
 md"# More Examples"
+
+# ╔═╡ 8143b4b1-ac42-44c8-b3d8-5d4a5f8d2085
+
+
+# ╔═╡ 3fb4d3fc-e753-45a6-bed9-bad62a3708c6
+md"## High NA, Small Pixels, Short Distance"
 
 # ╔═╡ 6fe0ebef-6705-47db-a7ff-0d82bfa8eb43
 begin
@@ -423,21 +521,6 @@ begin
 	mask_disc = ComplexF32.(mydisc .* exp_ikx(sz.÷2, shift_by= .-(aleph_disc .* k_max))); # disc 
 
 end;
-
-# ╔═╡ 2e800b25-43da-4dba-8548-5a4ba08550ff
-
-
-# ╔═╡ 82b67338-4474-4501-a1ba-4ae060bb4baa
-simshow(mask_disc .+ mask_box)
-
-# ╔═╡ 242ac622-de2c-481b-a996-31a5a026d6de
-simshow(abs2.(scaled_angular_spectrum(0.0 .* mask_disc .+ mask_box, z0, λ, L2[1]/2 )[1]), γ=0.2)
-
-# ╔═╡ 40d90094-6657-4f5d-aef5-f70562135823
-md"Some problem for the `mask_box`!"
-
-# ╔═╡ 3fb4d3fc-e753-45a6-bed9-bad62a3708c6
-md"## High NA, Small Pixels, Short Distance"
 
 # ╔═╡ 13352412-89f2-463a-9bc7-104b5c682942
 begin
@@ -491,50 +574,11 @@ simshow(abs.(resample(abs2.(fresnel(resample(mask_boxb, size(mask_boxb) .÷ 2), 
 # ╔═╡ 59cd1971-69a3-4851-bfa3-be393fd3ebcb
 mask_boxb
 
-# ╔═╡ 77df0823-d7e3-4216-9f24-ee00fd6b4d22
-simshow(mask_boxb)
+# ╔═╡ e9ff063d-31ee-4493-8fbe-89a09c34185a
+simshow(mask_disc .+ mask_box)
 
-# ╔═╡ cfa7b2e5-a2b9-4a75-bc32-46a50fd62624
-U_circ2 = ComplexF64.(rr((N, N)) .< D_circ / 2)
-
-# ╔═╡ 82a17f2a-28a1-43f8-a197-b1664e6d4c49
-simshow(U_circ2)
-
-# ╔═╡ 833fd1e6-70d0-4683-bfec-3f0d7f294fb0
-rr((4,4)) .< 1
-
-# ╔═╡ 1979dde7-79f8-4d07-a245-fd82aff8a250
-@time res2 = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=false)
-
-# ╔═╡ b87c48cc-1e30-4b49-9c46-1b332bf1ba82
-
-
-# ╔═╡ 19793963-adbb-449f-8a65-7dafb1647e85
-λ * z_circ
-
-# ╔═╡ 148899c9-c859-4a96-9d09-9d80e168b07b
-L^2 / z_circ / λ / (size(U_circ2, 1) / 2)
-
-# ╔═╡ dfcc6c59-a913-4404-8bc7-6ab1ceea1e7f
-L_new = size(U_circ2, 1) / 2 * λ * z_circ / L
-
-# ╔═╡ fe320331-1c1d-4aff-aec2-1c93944005bb
-L_new^2 / z_circ / λ / (size(U_circ2, 1) / 2)
-
-# ╔═╡ a0f58601-a5ec-4576-a49d-1e5af1b3df90
-@time sft_fr_circ2 = fresnel(resample(U_circ2,size(U_circ2).÷2), z_circ * 0.25, λ, L, skip_final_phase=false)
-
-# ╔═╡ d188d763-5f67-4d8d-8a1f-bbe5682241e8
-simshow(sft_fr_circ2[1], γ=0.1)
-
-# ╔═╡ a9e1fb74-f04b-4a9f-9b7b-4e298d57ee1d
-simshow(fftshift(sft_fr_circ2[2].Q₂))
-
-# ╔═╡ 7a258aed-4b48-4e43-a7a5-80e17103ca80
-simshow(fftshift(sft_fr_circ2[2].Q₁))
-
-# ╔═╡ 7e7598ff-eec3-4dda-95f2-b6a3df1b79fa
-sft_fr_circ2[2].L / L
+# ╔═╡ e94b3b88-5805-4fb7-95d5-67dc3669a1d2
+simshow(abs2.(scaled_angular_spectrum(0.0 .* mask_disc .+ mask_box, z0, λ, L2[1]/2 )[1]), γ=0.2)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -2177,14 +2221,37 @@ version = "1.4.1+0"
 # ╠═b3e31f75-5216-47b5-85b3-026a0321c0a8
 # ╠═9c46ad96-96ac-4d40-bfec-d146451f1130
 # ╠═7ae68d67-531f-4eb9-abc7-50d9acaeb5f7
-# ╟─79fb5df8-a06c-48ce-b25f-1f8ff345e39a
-# ╠═6fe0ebef-6705-47db-a7ff-0d82bfa8eb43
 # ╠═2e800b25-43da-4dba-8548-5a4ba08550ff
-# ╠═82b67338-4474-4501-a1ba-4ae060bb4baa
-# ╠═242ac622-de2c-481b-a996-31a5a026d6de
-# ╟─40d90094-6657-4f5d-aef5-f70562135823
+# ╠═391ace06-0544-40ad-9b99-5a79a9304361
+# ╟─a31e12c0-2deb-4703-968d-bf9a6a8f7cc2
+# ╠═2c7460e0-3735-427b-ba88-8e58484b4af8
+# ╠═a866acde-6738-4fed-8b87-b55451a4aacd
+# ╠═b910cbeb-3155-440e-9793-ddb99fdf6520
+# ╠═215461fd-9b2a-4fd1-a394-0def6b654b6e
+# ╠═fea1a634-a069-4305-b2df-6222117b2f67
+# ╠═a63e9145-ef2c-4bf2-bfdf-04b0ff32b25f
+# ╠═d9ddaf9f-5775-42d2-8f57-e389b23537bd
+# ╠═d0962d9c-f42d-43e6-9397-0c741922feac
+# ╠═89155d2a-f8b7-43c1-a6a4-9e9372ac08b8
+# ╠═da62e118-2813-4387-97fb-6dbcfb0ac5b2
+# ╠═2bd72c9e-7a09-4134-8981-613ac49baef7
+# ╠═08c3bd5a-3735-4346-936b-7557f8b01949
+# ╠═4306ba36-dace-4a4f-bf24-508db355dd96
+# ╠═71925a3f-3165-4685-91d3-317fb1a17a82
+# ╠═7551da12-4ca9-4cdc-b3fc-596e4d00aac0
+# ╠═2fa8f6d5-b140-4072-a82f-5b84f2efca55
+# ╠═2802e2ad-f223-44df-95bf-0b4fbc145090
+# ╠═2a944f76-9f2d-4a98-a1a1-0c59363d7adc
+# ╠═30782540-1034-43d0-9831-c665503b41e8
+# ╠═99b01768-3364-440a-862d-1cfe278278fa
+# ╠═148a84c0-d09e-4c13-95fc-a5ed6b80953b
+# ╠═09248cd4-9463-4de7-a597-18480575c065
+# ╠═a60479d7-4ac1-4d2c-ae42-7c37635f021e
+# ╟─79fb5df8-a06c-48ce-b25f-1f8ff345e39a
+# ╟─8143b4b1-ac42-44c8-b3d8-5d4a5f8d2085
 # ╟─3fb4d3fc-e753-45a6-bed9-bad62a3708c6
 # ╠═13352412-89f2-463a-9bc7-104b5c682942
+# ╠═6fe0ebef-6705-47db-a7ff-0d82bfa8eb43
 # ╠═7d35496e-d68c-4c50-8634-6b324392a5db
 # ╠═17120989-dcbd-4786-aa5d-1e1847d0f247
 # ╠═1c94e5ab-45a1-433a-80b2-4c7c469ca6b9
@@ -2192,20 +2259,7 @@ version = "1.4.1+0"
 # ╠═63524474-1553-4d6d-9c1a-8dabe2503c53
 # ╠═f169a37e-a669-43da-b98b-eebffcfaf8a2
 # ╠═59cd1971-69a3-4851-bfa3-be393fd3ebcb
-# ╠═77df0823-d7e3-4216-9f24-ee00fd6b4d22
-# ╠═cfa7b2e5-a2b9-4a75-bc32-46a50fd62624
-# ╠═82a17f2a-28a1-43f8-a197-b1664e6d4c49
-# ╠═833fd1e6-70d0-4683-bfec-3f0d7f294fb0
-# ╠═1979dde7-79f8-4d07-a245-fd82aff8a250
-# ╠═d188d763-5f67-4d8d-8a1f-bbe5682241e8
-# ╠═b87c48cc-1e30-4b49-9c46-1b332bf1ba82
-# ╠═19793963-adbb-449f-8a65-7dafb1647e85
-# ╠═a9e1fb74-f04b-4a9f-9b7b-4e298d57ee1d
-# ╠═7a258aed-4b48-4e43-a7a5-80e17103ca80
-# ╠═7e7598ff-eec3-4dda-95f2-b6a3df1b79fa
-# ╠═148899c9-c859-4a96-9d09-9d80e168b07b
-# ╠═fe320331-1c1d-4aff-aec2-1c93944005bb
-# ╠═dfcc6c59-a913-4404-8bc7-6ab1ceea1e7f
-# ╠═a0f58601-a5ec-4576-a49d-1e5af1b3df90
+# ╠═e9ff063d-31ee-4493-8fbe-89a09c34185a
+# ╠═e94b3b88-5805-4fb7-95d5-67dc3669a1d2
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
