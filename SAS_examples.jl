@@ -181,13 +181,13 @@ Returns the the electrical field with physical length `L` and wavelength `λ` pr
 	
 	# calculate phases of Fresnel
 	H₁ = exp.(1im .* k ./ (2 .* z) .* (x .^ 2 .+ y .^ 2))
-	H₂ = (exp.(1im .* k .* z) .*
-			 exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
-	
+
 	# skips multiplication of final phase
 	if skip_final_phase
 		field_out = fftshift(fft(ifftshift(field_new) .* H₁))
 	else
+		H₂ = (exp.(1im .* k .* z) .*
+			 exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
 		field_out = fftshift(fft(ifftshift(field_new) .* H₁) .* H₂)
 	end
 	
@@ -262,12 +262,12 @@ function scaled_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 	
 	# calculate phases of Fresnel
 	H₁ = exp.(1im .* k ./ (2 .* z) .* (x .^ 2 .+ y .^ 2))
-	H₂ = (exp.(1im .* k .* z) .*
-			 exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
-	
+
 	if skip_final_phase
 		ψ_p_final = fftshift(fft(H₁ .* ψ_precomp))
 	else
+		H₂ = (exp.(1im .* k .* z) .*
+			 exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
 		ψ_p_final = fftshift(H₂ .* fft(H₁ .* ψ_precomp))
 	end
 	
