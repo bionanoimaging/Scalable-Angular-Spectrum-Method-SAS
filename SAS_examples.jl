@@ -5,7 +5,7 @@ using Markdown
 using InteractiveUtils
 
 # ╔═╡ 4f0ea44a-5475-11ed-3979-6d7d4c1a8ce1
-using FFTW, NDTools, Interpolations, IndexFunArrays, Colors, ImageShow, ImageIO, FourierTools, Plots, Interpolations, PlutoUI, ImageView, ColorSchemes
+using FFTW, NDTools, Interpolations, IndexFunArrays, Colors, ImageShow, ImageIO, FourierTools, Plots, Interpolations, PlutoUI, ImageView, ColorSchemes, TestImages
 
 # ╔═╡ 2bd51f20-7abb-4d95-a56b-c2e058c2a1be
 md"# Scaled Angular Spectrum
@@ -45,8 +45,17 @@ md"# Angular Spectrum of Plane Waves"
 # ╔═╡ 2c6d0d9b-9617-40d3-859d-4c5de8cafbd7
 md"# Fresnel Propagation"
 
+# ╔═╡ 58481d63-d11e-4780-ade1-27cd5a828f20
+smooth_f(x, α, β) = hann(scale(x, α, β))
+
+# ╔═╡ 3437a418-25c6-425d-978d-8342f3e84e66
+plot(range(0, 1, length=100), smooth_f.(range(0, 1, length=100), 0.2, 0.9))
+
 # ╔═╡ 004097d8-1906-4151-a4f3-4be7f7a71434
 md"# Scaled Angular Spectrum"
+
+# ╔═╡ fdb237d3-5c00-463c-9671-3de7ee3e2bcc
+
 
 # ╔═╡ fd94ba72-5130-40e8-884c-37899b2f2fa7
 λ = 500e-9
@@ -129,10 +138,7 @@ function angular_spectrum(field::Matrix{T}, z, λ, L; pad_factor = 2) where T
 	# and fuzzy logic 
 	Δu =   1 / L_new
 	u_limit = 1 / (sqrt((2 * Δu * z)^2 + 1) * λ)
-	smooth_f(x, α, β) = hann(scale(x, α, β))
-	
-	f_x_limit = sqrt(inv(1/u_limit^2 + λ^2))
-	
+	smooth_f(x, α, β) = hann(scale(x, α, β))	
 	
 	# bandlimit filter
 	# smoothing at 0.8 is arbitrary but works well
@@ -205,8 +211,8 @@ end
 Returns the the electrical field with physical length `L` and wavelength `λ` propagated with the Scaled Angular Spectrum (SAS) of plane waves (AS) by the propagation distance `z`.
 """
 function scaled_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ; 
-								 pad_factor=2, skip_final_phase=true,  set_pad_zero=false) where {T} 
-	
+								 pad_factor=2, skip_final_phase=true,  set_pad_zero=false, bandlimit_soft_px=20) where {T} 
+	@assert bandlimit_soft_px ≥ 0 "bandlimit_soft_px must be ≥ 0"
 	@assert size(ψ₀, 1) == size(ψ₀, 2) "Restricted to auadratic fields."
 	
 	
@@ -230,11 +236,27 @@ function scaled_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 	
 	# smooth window functon
 	smooth_f(x, α, β) = hann(scale(x, α, β))
+
+	# this part finds the first index where the inequality is fullfilled
+	# we use a certain "soften" border of `bandlimit_soft_px` to soften the kernel
+	# the inequality reaches 1 quite asymptotically hence we need to find
+	# a value which is meaningful as scale
+	ineq_x = fftshift(cx[1, :].^2 .* (1 .+ tx[1, :].^2) ./ tx[1, :].^2 .+ cy[1, :].^2)
+	ind_x_first = findfirst(ineq_x .≤ 1)
+	ind_x_last = findlast(ineq_x .≤ 1)
+
+	ind_x_first = isnothing(ind_x_first) ? 1 : Tuple(ind_x_first)[1] + bandlimit_soft_px
+	ineq_v = ind_x_first > 1 ? ineq_x[ind_x_first] : 1
+
+	if ind_x_first ≥ ind_x_last
+		@warn "Your bandlimit_soft_px is too large for the total support of the bandlimit window"
+		ineq_v = 1
+	end
 	
 	# bandlimit filter for precompensation
-	W = .*(
-			smooth_f.(cx.^2 .* (1 .+ tx.^2) ./ tx.^2 .+ cy.^2, 0.8, 1),
-			smooth_f.(cy.^2 .* (1 .+ ty.^2) ./ ty.^2 .+ cx.^2, 0.8, 1))
+	#W = (lel .< 1) .* (lel2 .< 1)
+	W = .*(smooth_f.(cx.^2 .* (1 .+ tx.^2) ./ tx.^2 .+ cy.^2, ineq_v, 1),
+	 		smooth_f.(cy.^2 .* (1 .+ ty.^2) ./ ty.^2 .+ cx.^2, ineq_v, 1))
 	
 	# Γ is the core part of Fresnel and AS
 	H_AS = sqrt.(0im .+ 1 .- abs2.(f_x .* λ) .- abs2.(f_y .* λ)) 
@@ -277,7 +299,7 @@ function scaled_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 	
 	ψ_final = select_region(ψ_p_final, new_size=size(ψ₀))
 	
-	return ψ_final, (;Q, L=L * M)
+	return ψ_final, (;Q, L=L * M, H₁, ψ_precomp, ΔH, W)
 end
 
 # ╔═╡ 6fa374ce-6953-443a-94a0-9859237fe345
@@ -301,13 +323,13 @@ simshow(U_circ)
 @time as_circ = angular_spectrum(select_region(U_circ, new_size=round.(Int, size(U_circ) .* M)), z_circ, λ, L * M)
 
 # ╔═╡ 3524374c-97f0-4cdd-88cd-7ffbdb52834c
-simshow(as_circ[1], γ=1)
+simshow(abs2.(as_circ[1]), γ=0.5)
 
 # ╔═╡ dd434bfd-c14d-4417-922a-01a573c44143
 @time sft_fr_circ = fresnel(resample(U_circ,size(U_circ).÷2), z_circ, λ, L, skip_final_phase=false)
 
 # ╔═╡ 49c66347-dfdb-462e-84e4-92aaef26891e
-simshow(resample(select_region(sft_fr_circ[1], new_size=(N, N).÷2), (N, N)))
+simshow(abs2.(resample(select_region(sft_fr_circ[1], new_size=(N, N).÷2), (N, N))), γ=0.5)
 
 # ╔═╡ 6af0bc99-4245-44f8-bc45-405f9e56b513
 @time sas_circ = scaled_angular_spectrum(U_circ, z_circ, λ, L, skip_final_phase=false)
@@ -316,7 +338,7 @@ simshow(resample(select_region(sft_fr_circ[1], new_size=(N, N).÷2), (N, N)))
 @time fresnel(U_circ, z_circ, λ, L, skip_final_phase=false)[1]
 
 # ╔═╡ d5fdc880-6d6a-4bb1-9167-f16340361897
-simshow(resample(sas_circ[1], M .* (N,N)))
+simshow(abs2.(resample(sas_circ[1], M .* (N,N))), γ=0.5)
 
 # ╔═╡ d623e68d-8cfd-4df8-af30-396097ddc6aa
 L_box = 128e-6;
@@ -352,11 +374,19 @@ The Fresnel number is $(round((D_box)^2 / z_box / λ, digits=3))
 # ╔═╡ e4bb5e06-0b89-4c27-885f-0d13da6d2ff0
 simshow(U_box)
 
+# ╔═╡ 2dde964f-667d-4a96-ae47-f8a17ae31f28
+L_box ./ N_box / λ
+
 # ╔═╡ 9d78321e-6586-4c31-bec7-279d23c79841
+# ╠═╡ disabled = true
+#=╠═╡
 @time as_box = angular_spectrum(select_region(U_box, new_size=round.(Int, size(U_box) .* M_box)), z_box, λ, L_box * M_box)
+  ╠═╡ =#
 
 # ╔═╡ d128d0ec-61bd-46a2-a915-e42220cd09cc
+#=╠═╡
 simshow(abs2.(as_box[1]), γ=0.13, cmap=:inferno)
+  ╠═╡ =#
 
 # ╔═╡ dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
 @time sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=true)
@@ -368,13 +398,67 @@ simshow(abs2.(as_box[1]), γ=0.13, cmap=:inferno)
 simshow(abs.(resample(abs2.(sft_fr_box[1]), M_box .* (N_box, N_box))), γ=0.13, cmap=:inferno)
 
 # ╔═╡ b3e31f75-5216-47b5-85b3-026a0321c0a8
-@time sas_box = scaled_angular_spectrum(U_box, z_box, λ, L_box, skip_final_phase=true)
+@time sas_box = scaled_angular_spectrum(U_box, z_box, λ, L_box, bandlimit_soft_px=20, skip_final_phase=true)
 
 # ╔═╡ 9c46ad96-96ac-4d40-bfec-d146451f1130
 simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
 
 # ╔═╡ 7ae68d67-531f-4eb9-abc7-50d9acaeb5f7
+md"# Third Example: Interfering Beams"
 
+# ╔═╡ e872129e-a6a9-4a79-bbfb-256d3080cb38
+L_int = 1f-3;
+
+# ╔═╡ 566e4c0c-ccc9-46a4-9b1c-127d92a29ba1
+N_int = 128;
+
+# ╔═╡ 5d923924-0bce-4ab7-a45c-cb8860ef3d60
+L_int / N_int / λ
+
+# ╔═╡ 4d7a90cf-3bcf-4a5f-97e3-cffaac21280c
+M_int = 10000
+
+# ╔═╡ dea12428-d7fe-427f-8291-57ae3db059d6
+z_int = M_int * inv(λ * N_int / L_int^2)
+
+# ╔═╡ c5171fcb-51f2-47b0-999b-6d896b988852
+y_int = fftpos(L_box, N_int, NDTools.CenterFT);
+
+# ╔═╡ 27733b9e-6cb2-4b3f-bd3f-50f13e1752c2
+α = 5
+
+# ╔═╡ a8a0c67d-31c7-4b91-84c7-e25a65aca6ee
+U_int = box((N_int, N_int), (N÷10,N÷10), offset=(50, 50)) .* exp.(1im .* 2π ./ λ .* y_int' .* sind(-α) .+ 1im .* 2π ./ λ .* y_int .* sind(-α)) .+ (20^2 .> rr2((N_int, N_int), offset=(450, 450))) .* exp.(.-1im .* 2π ./ λ .* y_int' .* sind(α) .- 1im .* 2π ./ λ .* y_int .* sind(α));
+
+# ╔═╡ b31fa71e-5a4f-4f41-bf0d-b342a02ddfc8
+simshow(U_int)
+
+# ╔═╡ 0ed55066-14e8-43f3-b4c1-14d2585b802b
+U_int_sas,tt = scaled_angular_spectrum(U_int, z_int, λ, L_int, bandlimit_soft_px=20);
+
+# ╔═╡ 14fdb70d-519c-4d31-b4c1-d4e95d6d47da
+simshow(fftshift(tt.:ψ_precomp), γ=0.1)
+
+# ╔═╡ edeac2ae-060c-4162-b1ea-86085050f0ee
+simshow(ifftshift(tt.:ΔH), γ=0.1)
+
+# ╔═╡ 6f654c65-ad57-461c-975c-41b2c62b9f76
+simshow(fftshift(tt.W), γ=1,set_one=false)
+
+# ╔═╡ d0f8c918-eeda-4d87-adb6-3c177f56d7cc
+U_fresnel = select_region(fresnel(select_region(U_int, M=2), z_int, λ, 2 * L_int)[1], M=0.5);
+
+# ╔═╡ 80956faf-9533-45e9-a2d9-c970455ae5de
+simshow(abs2.(U_int_sas), γ=0.1)
+
+# ╔═╡ 142e0a6a-b3a8-4afd-89a3-b7740c096537
+simshow(abs2.(U_fresnel), γ=0.1)
+
+# ╔═╡ 2fec9d11-133c-4ade-9dae-73615a5ade84
+begin
+	plot(abs2.(U_int_sas)[30, 1:100])
+	plot!(abs2.(U_fresnel)[30, 1:100])
+end
 
 # ╔═╡ 79fb5df8-a06c-48ce-b25f-1f8ff345e39a
 md"# More Examples"
@@ -433,6 +517,12 @@ simshow(mask_disc .+ mask_box)
 # ╔═╡ 242ac622-de2c-481b-a996-31a5a026d6de
 simshow(abs2.(scaled_angular_spectrum(0.0 .* mask_disc .+ mask_box, z0, λ, L2[1]/2 )[1]), γ=0.2)
 
+# ╔═╡ 57abdeba-4604-49ed-a9ba-fe0de5e48a83
+simshow(abs2.(fresnel(0.0 .* mask_disc .+ mask_box, z0, λ, L2[1]/2 )[1]), γ=0.2)
+
+# ╔═╡ 46afa443-9250-43bf-bd96-91cbe53c1390
+simshow(abs2.(angular_spectrum(0.0 .* mask_disc .+ mask_box, z0, λ, L2[1]/2 )[1]), γ=0.2)
+
 # ╔═╡ 40d90094-6657-4f5d-aef5-f70562135823
 md"Some problem for the `mask_box`!"
 
@@ -470,6 +560,9 @@ begin
 	mask_boxb = ComplexF32.(myboxb .* exp_ikx(szb.÷2, shift_by= .- aleph_boxb .* k_maxb)); # box(sz,(111,111)) .* 
 end;
 
+# ╔═╡ dd38f288-5294-4a1e-bdd4-44350a9ace55
+λ * zb * size(myboxb, 1) / Lb[1]^2
+
 # ╔═╡ 7d35496e-d68c-4c50-8634-6b324392a5db
 simshow(mask_boxb)
 
@@ -494,6 +587,7 @@ Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 NDTools = "98581153-e998-4eef-8d0d-5ec2c052313d"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
+TestImages = "5e47fb64-e119-507b-a336-dd2b206d9990"
 
 [compat]
 ColorSchemes = "~3.20.0"
@@ -508,6 +602,7 @@ Interpolations = "~0.14.7"
 NDTools = "~0.5.2"
 Plots = "~1.38.5"
 PlutoUI = "~0.7.50"
+TestImages = "~1.7.1"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
@@ -516,7 +611,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.8.5"
 manifest_format = "2.0"
-project_hash = "b63bc44243a872c69891f1c993d0f666e05802ba"
+project_hash = "13eeddf56751c2181e18b39d3d7ea4148f511d0a"
 
 [[deps.ATK_jll]]
 deps = ["Artifacts", "Glib_jll", "JLLWrappers", "Libdl", "Pkg"]
@@ -729,6 +824,12 @@ version = "0.1.2"
 [[deps.DelimitedFiles]]
 deps = ["Mmap"]
 uuid = "8bb1440f-4735-579b-a4ab-409b98df4dab"
+
+[[deps.Distances]]
+deps = ["LinearAlgebra", "SparseArrays", "Statistics", "StatsAPI"]
+git-tree-sha1 = "49eba9ad9f7ead780bfb7ee319f962c811c6d3b2"
+uuid = "b4f34e82-e78d-54a5-968a-f98e89d6e8f7"
+version = "0.10.8"
 
 [[deps.Distributed]]
 deps = ["Random", "Serialization", "Sockets"]
@@ -954,6 +1055,18 @@ deps = ["FileIO", "IndirectArrays", "JpegTurbo", "LazyModules", "Netpbm", "OpenE
 git-tree-sha1 = "342f789fd041a55166764c351da1710db97ce0e0"
 uuid = "82e4d734-157c-48bb-816b-45c225c6df19"
 version = "0.6.6"
+
+[[deps.ImageMagick]]
+deps = ["FileIO", "ImageCore", "ImageMagick_jll", "InteractiveUtils"]
+git-tree-sha1 = "ca8d917903e7a1126b6583a097c5cb7a0bedeac1"
+uuid = "6218d12a-5da1-5696-b52f-db25d2ecc6d1"
+version = "1.2.2"
+
+[[deps.ImageMagick_jll]]
+deps = ["JpegTurbo_jll", "Libdl", "Libtiff_jll", "Pkg", "Zlib_jll", "libpng_jll"]
+git-tree-sha1 = "1c0a2295cca535fabaf2029062912591e9b61987"
+uuid = "c73af94c-d91f-53ed-93a7-00f77d67a9d7"
+version = "6.9.10-12+3"
 
 [[deps.ImageMetadata]]
 deps = ["AxisArrays", "ImageAxes", "ImageBase", "ImageCore"]
@@ -1685,6 +1798,12 @@ git-tree-sha1 = "d1bf48bfcc554a3761a133fe3a9bb01488e06916"
 uuid = "2913bbd2-ae8a-5f71-8c99-4fb6c76f3a91"
 version = "0.33.21"
 
+[[deps.StringDistances]]
+deps = ["Distances", "StatsAPI"]
+git-tree-sha1 = "ceeef74797d961aee825aabf71446d6aba898acb"
+uuid = "88034a9c-02f8-509d-84a9-84ec65e18404"
+version = "0.11.2"
+
 [[deps.TOML]]
 deps = ["Dates"]
 uuid = "fa267f1f-6049-4f14-aa54-33bafae1ed76"
@@ -1716,6 +1835,12 @@ version = "0.1.1"
 [[deps.Test]]
 deps = ["InteractiveUtils", "Logging", "Random", "Serialization"]
 uuid = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[[deps.TestImages]]
+deps = ["AxisArrays", "ColorTypes", "FileIO", "ImageIO", "ImageMagick", "OffsetArrays", "Pkg", "StringDistances"]
+git-tree-sha1 = "03492434a1bdde3026288939fc31b5660407b624"
+uuid = "5e47fb64-e119-507b-a336-dd2b206d9990"
+version = "1.7.1"
 
 [[deps.TiffImages]]
 deps = ["ColorTypes", "DataStructures", "DocStringExtensions", "FileIO", "FixedPointNumbers", "IndirectArrays", "Inflate", "Mmap", "OffsetArrays", "PkgVersion", "ProgressMeter", "UUIDs"]
@@ -2082,7 +2207,10 @@ version = "1.4.1+0"
 # ╠═adfcc771-e092-4dd3-8ff9-9a940c1c29a3
 # ╟─2c6d0d9b-9617-40d3-859d-4c5de8cafbd7
 # ╠═2177f522-9ccb-4b96-8bd5-92718f0d5cc6
+# ╠═58481d63-d11e-4780-ade1-27cd5a828f20
+# ╠═3437a418-25c6-425d-978d-8342f3e84e66
 # ╟─004097d8-1906-4151-a4f3-4be7f7a71434
+# ╠═fdb237d3-5c00-463c-9671-3de7ee3e2bcc
 # ╠═4db3a990-4e5d-4fe7-89cc-4823d1b5b592
 # ╟─c7194950-26ff-4972-81be-1fabf1ba9dcf
 # ╠═fd94ba72-5130-40e8-884c-37899b2f2fa7
@@ -2112,6 +2240,7 @@ version = "1.4.1+0"
 # ╠═af91c034-2f43-4786-aef7-a7bce45ab38e
 # ╠═7b13f72d-6e5d-440b-b080-1301a1560acc
 # ╠═e4bb5e06-0b89-4c27-885f-0d13da6d2ff0
+# ╠═2dde964f-667d-4a96-ae47-f8a17ae31f28
 # ╠═9d78321e-6586-4c31-bec7-279d23c79841
 # ╠═d128d0ec-61bd-46a2-a915-e42220cd09cc
 # ╠═dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
@@ -2119,15 +2248,35 @@ version = "1.4.1+0"
 # ╠═ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
 # ╠═b3e31f75-5216-47b5-85b3-026a0321c0a8
 # ╠═9c46ad96-96ac-4d40-bfec-d146451f1130
-# ╠═7ae68d67-531f-4eb9-abc7-50d9acaeb5f7
+# ╟─7ae68d67-531f-4eb9-abc7-50d9acaeb5f7
+# ╠═e872129e-a6a9-4a79-bbfb-256d3080cb38
+# ╠═566e4c0c-ccc9-46a4-9b1c-127d92a29ba1
+# ╠═5d923924-0bce-4ab7-a45c-cb8860ef3d60
+# ╠═dea12428-d7fe-427f-8291-57ae3db059d6
+# ╠═4d7a90cf-3bcf-4a5f-97e3-cffaac21280c
+# ╠═14fdb70d-519c-4d31-b4c1-d4e95d6d47da
+# ╠═edeac2ae-060c-4162-b1ea-86085050f0ee
+# ╠═6f654c65-ad57-461c-975c-41b2c62b9f76
+# ╠═c5171fcb-51f2-47b0-999b-6d896b988852
+# ╠═27733b9e-6cb2-4b3f-bd3f-50f13e1752c2
+# ╠═a8a0c67d-31c7-4b91-84c7-e25a65aca6ee
+# ╠═b31fa71e-5a4f-4f41-bf0d-b342a02ddfc8
+# ╠═0ed55066-14e8-43f3-b4c1-14d2585b802b
+# ╠═d0f8c918-eeda-4d87-adb6-3c177f56d7cc
+# ╠═80956faf-9533-45e9-a2d9-c970455ae5de
+# ╠═142e0a6a-b3a8-4afd-89a3-b7740c096537
+# ╠═2fec9d11-133c-4ade-9dae-73615a5ade84
 # ╟─79fb5df8-a06c-48ce-b25f-1f8ff345e39a
 # ╠═6fe0ebef-6705-47db-a7ff-0d82bfa8eb43
 # ╠═2e800b25-43da-4dba-8548-5a4ba08550ff
 # ╠═82b67338-4474-4501-a1ba-4ae060bb4baa
 # ╠═242ac622-de2c-481b-a996-31a5a026d6de
+# ╠═57abdeba-4604-49ed-a9ba-fe0de5e48a83
+# ╠═46afa443-9250-43bf-bd96-91cbe53c1390
 # ╟─40d90094-6657-4f5d-aef5-f70562135823
 # ╟─3fb4d3fc-e753-45a6-bed9-bad62a3708c6
 # ╠═13352412-89f2-463a-9bc7-104b5c682942
+# ╠═dd38f288-5294-4a1e-bdd4-44350a9ace55
 # ╠═7d35496e-d68c-4c50-8634-6b324392a5db
 # ╠═17120989-dcbd-4786-aa5d-1e1847d0f247
 # ╠═1c94e5ab-45a1-433a-80b2-4c7c469ca6b9
