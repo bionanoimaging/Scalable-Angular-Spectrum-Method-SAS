@@ -13,7 +13,7 @@ Here we present the Julia implementation of the Scaled Angular Spectrum method a
 "
 
 # ╔═╡ 15975d27-b575-4e76-94a7-02b8f218acb1
-md"# Load Packages"
+md"## Load Packages"
 
 # ╔═╡ 45dabf95-ede9-46c5-896c-39945a2029e7
 begin
@@ -25,31 +25,39 @@ end
 TableOfContents()
 
 # ╔═╡ d0e12818-286b-475d-b76b-da777073e72a
-md"# Some Utility Functions"
+md"## Some Utility Functions"
 
 # ╔═╡ b87f5371-13b0-4c73-91fb-8108a5a80a3e
 hann(x) = sinpi(x/2)^2
 
-# ╔═╡ 02cddba9-a561-4360-bfe4-805f7bf53251
-L_fuzzy(x, α, β) = x ≤ α ? 1 : (α ≤ x ≤ β) ? 1-(x-α)/(β-α) : 0
-
 # ╔═╡ e53711d2-68ed-4712-82ba-c11bc14ffab3
-scale(x, α, β) = clamp.(1 .-(x.-α)./(β .- α),0,1)
+scale(x, α, β) = clamp(α ≥ β ? (x > β ? zero(x) : one(x)) : 1 - (x-α)/(β-α), 0, 1)
+
+# ╔═╡ 529a3df1-8a18-416e-9730-14eb10302fbb
+function find_width_window(ineq_1D::AbstractVector, bandlimit_border)
+	bs = ineq_1D .≤ 1
+	ind_x_first = findfirst(bs)
+	ind_x_last = findlast(bs)
+
+	if isnothing(ind_x_first) || isnothing(ind_x_last)
+		return (1,1)
+	end
+	
+	diff_b = round(Int, 0.5 * (1 - bandlimit_border[1]) * (Tuple(ind_x_last)[1] - Tuple(ind_x_first)[1]))
+	diff_e = round(Int, 0.5 * (1 - bandlimit_border[2]) * (Tuple(ind_x_last)[1] - 
+	Tuple(ind_x_first)[1]))
+	
+	ineq_v_b = ineq_1D[ind_x_first + diff_b]
+	ineq_v_e = ineq_1D[ind_x_first + diff_e]
+
+	return ineq_v_b, ineq_v_e
+end
 
 # ╔═╡ 45e9dad4-8f26-45c6-b58e-93d634881f60
 md"# Angular Spectrum of Plane Waves"
 
-# ╔═╡ 71f123f7-0b47-427c-b96f-d80d80907434
-
-
 # ╔═╡ 2c6d0d9b-9617-40d3-859d-4c5de8cafbd7
 md"# Fresnel Propagation"
-
-# ╔═╡ 58481d63-d11e-4780-ade1-27cd5a828f20
-smooth_f(x, α, β) = hann(scale(x, α, β))
-
-# ╔═╡ 3437a418-25c6-425d-978d-8342f3e84e66
-plot(range(0, 1, length=100), smooth_f.(range(0, 1, length=100), 0.2, 0.9))
 
 # ╔═╡ 004097d8-1906-4151-a4f3-4be7f7a71434
 md"# Scaled Angular Spectrum"
@@ -61,22 +69,25 @@ md"# Scaled Angular Spectrum"
 λ = 500e-9
 
 # ╔═╡ 0c62447e-cc20-4e68-a645-367dd823b507
-L = 15e-6
+L = 128e-6 / 2
 
 # ╔═╡ 8cc751a6-aa3a-4095-97a3-256ba37d3faa
 N = 512
+
+# ╔═╡ 76fc433a-fc15-4660-b7ad-436c4d756488
+L / N / λ
 
 # ╔═╡ a53ce9e8-1f86-40ee-949c-378cf486af1b
 y = fftpos(L, N, NDTools.CenterFT)
 
 # ╔═╡ d58452cc-d4b7-4d6f-9c39-fd8329291cdd
-D_circ = N / 2
+D_circ = N / 8
 
 # ╔═╡ 5611f23e-8513-4c6d-b2d5-b092bdff21ed
-U_circ = ComplexF64.(rr((N, N)) .< D_circ / 2) .* exp.(1im .* 2π ./ λ .* y .* sind(60)) .+ ComplexF64.(rr((N, N)) .< D_circ / 2) .* exp.(1im .* 2π ./ λ .* y' .* sind(-60))
+U_circ = ComplexF64.(rr((N, N)) .< D_circ / 2) .* exp.(1im .* 2π ./ λ .* y .* sind(45)) .+ ComplexF64.(rr((N, N)) .< D_circ / 2) .* exp.(1im .* 2π ./ λ .* y' .* sind(-45));
 
 # ╔═╡ 694b3ac0-51e2-46b4-a5ce-8b1a93d6a368
-M = 2
+M = 4
 
 # ╔═╡ e05c6882-81f9-4784-ab7e-7a9a8d296b6d
 """
@@ -168,7 +179,9 @@ Returns the the electrical field with physical length `L` and wavelength `λ` pr
 	pad_factor = 1
 	L_new = pad_factor .* L
 	# applies zero padding
-	field_new = select_region(field, new_size=size(field) .* pad_factor)
+	field_new = pad_factor != 1 ?
+			select_region(field, new_size=size(field) .* pad_factor) :
+			field
 	
 	# helpful propagation variables
 	(; k, f_x, f_y, x, y) = _propagation_variables(field_new, z, λ, L_new)
@@ -176,13 +189,12 @@ Returns the the electrical field with physical length `L` and wavelength `λ` pr
 	
 	N = size(field_new, 1)
 	# new sample coordinates
+	M = λ * z * N / L_new^2
 	dq = λ * z / L_new
 	Q = dq * N
 	
-	#Q_x = fftpos(dq * N, N, CenterFT)
 	q_y = similar(field, N)
-	#q_y .= ifftshift(fftpos(dq * N, N, CenterFT))
-	q_y .= ifftshift(range(-Q/2, Q/2, length=N))
+	q_y .= ifftshift(fftpos(M * L_new, N, CenterFT))
 	q_x = q_y'
 	
 	# calculate phases of Fresnel
@@ -211,7 +223,8 @@ end
 Returns the the electrical field with physical length `L` and wavelength `λ` propagated with the Scaled Angular Spectrum (SAS) of plane waves (AS) by the propagation distance `z`.
 """
 function scalable_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ; 
-								 pad_factor=2, skip_final_phase=true,  set_pad_zero=false, bandlimit_soft_px=20) where {T} 
+								 pad_factor=2, skip_final_phase=true,  set_pad_zero=false, bandlimit_soft_px=20,
+								bandlimit_border=(0.8, 1)) where {T} 
 	@assert bandlimit_soft_px ≥ 0 "bandlimit_soft_px must be ≥ 0"
 	@assert size(ψ₀, 1) == size(ψ₀, 2) "Restricted to auadratic fields."
 	
@@ -219,7 +232,7 @@ function scalable_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 	N = size(ψ₀, 1)
 	z_limit = (- 4 * L * sqrt(8*L^2 / N^2 + λ^2) * sqrt(L^2 * inv(8 * L^2 + N^2 * λ^2)) / (λ * (-1+2 * sqrt(2) * sqrt(L^2 * inv(8 * L^2 + N^2 * λ^2)))))
 	
-	
+	# vignetting limit
 	z > z_limit &&  @warn "Propagated field might be affected by vignetting"
 	L_new = pad_factor * L
 	
@@ -234,40 +247,28 @@ function scalable_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 	tx = L_new / 2 / z .+ abs.(λ .* f_x)
 	ty = L_new / 2 / z .+ abs.(λ .* f_y)
 	
-	# smooth window functon
+	# smooth window function
 	smooth_f(x, α, β) = hann(scale(x, α, β))
-
-	# this part finds the first index where the inequality is fullfilled
-	# we use a certain "soften" border of `bandlimit_soft_px` to soften the kernel
-	# the inequality reaches 1 quite asymptotically hence we need to find
-	# a value which is meaningful as scale
+	# find boundary for soft hann
 	ineq_x = fftshift(cx[1, :].^2 .* (1 .+ tx[1, :].^2) ./ tx[1, :].^2 .+ cy[1, :].^2)
-	ind_x_first = findfirst(ineq_x .≤ 1)
-	ind_x_last = findlast(ineq_x .≤ 1)
+	limits = find_width_window(ineq_x, bandlimit_border)
 
-	ind_x_first = isnothing(ind_x_first) ? 1 : Tuple(ind_x_first)[1] + bandlimit_soft_px
-	ineq_v = ind_x_first > 1 ? ineq_x[ind_x_first] : 1
-
-	if ind_x_first ≥ ind_x_last
-		@warn "Your bandlimit_soft_px is too large for the total support of the bandlimit window"
-		ineq_v = 1
-	end
-	
 	# bandlimit filter for precompensation
-	#W = (lel .< 1) .* (lel2 .< 1)
-	W = .*(smooth_f.(cx.^2 .* (1 .+ tx.^2) ./ tx.^2 .+ cy.^2, ineq_v, 1),
-	 		smooth_f.(cy.^2 .* (1 .+ ty.^2) ./ ty.^2 .+ cx.^2, ineq_v, 1))
+	W = .*(smooth_f.(cx.^2 .* (1 .+ tx.^2) ./ tx.^2 .+ cy.^2, limits...),
+	 		smooth_f.(cy.^2 .* (1 .+ ty.^2) ./ ty.^2 .+ cx.^2, limits...))
 	
-	# Γ is the core part of Fresnel and AS
+	# ΔH is the core part of Fresnel and AS
 	H_AS = sqrt.(0im .+ 1 .- abs2.(f_x .* λ) .- abs2.(f_y .* λ)) 
 	H_Fr = 1 .- abs2.(f_x .* λ) / 2 .- abs2.(f_y .* λ) / 2 
 	# take the difference here, key part of the ScaledAS
 	ΔH = W .* exp.(1im .* k .* z .* (H_AS .- H_Fr)) 
-	
+
+	# apply precompensation
 	ψ_precomp = ifft(fft(ifftshift(ψ_p)) .* ΔH)
 	
 	# we can set the padding region to zero
 	# but quite often there is meaningful signal
+	# not used, just for debugging
 	if set_pad_zero
 		ψ_precomp = select_region(fftshift(ψ_precomp), new_size=size(field))
 		ψ_precomp = select_region(ψ_precomp, new_size=pad_factor .* size(ψ₀))
@@ -278,13 +279,15 @@ function scalable_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 	dq = λ * z / L_new
 	Q = dq * N * pad_factor
 	q_y = similar(ψ_p, pad_factor * N)
-	#q_y .= ifftshift(range(- Q / 2, Q / 2, N * pad_factor))
+	# fftpos generates coordinates from -L/2 to L/2 but excluding the last 
+	# final bit
 	q_y .= ifftshift(fftpos(dq * pad_factor * N, pad_factor * N, CenterFT))
 	q_x = q_y'
 	
 	# calculate phases of Fresnel
 	H₁ = exp.(1im .* k ./ (2 .* z) .* (x .^ 2 .+ y .^ 2))
 
+	# skip final phase because often undersampled
 	if skip_final_phase
 		ψ_p_final = fftshift(fft(H₁ .* ψ_precomp))
 	else
@@ -293,13 +296,12 @@ function scalable_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 		ψ_p_final = fftshift(H₂ .* fft(H₁ .* ψ_precomp))
 	end
 	
-	# fix scaling
+	# fix absolute scaling of field
 	ψ_p_final .*= 1 / (1im * T(sqrt(length(ψ_precomp)))) 
-	
-	
+	# unpad/crop/extract center
 	ψ_final = select_region(ψ_p_final, new_size=size(ψ₀))
 	
-	return ψ_final, (;Q, L=L * M, H₁, ψ_precomp, ΔH, W)
+	return ψ_final, (;Q, L=L * M, W)
 end
 
 # ╔═╡ 6fa374ce-6953-443a-94a0-9859237fe345
@@ -310,8 +312,11 @@ md"# First Example: Circular
 
 In the first example, one straight beam and one oblique beam are passing through a round aperture.
 
-The Fresnel number is $(round((L / 16)^2 / z_circ / λ, digits=3))
+The Fresnel number is $(round((D_circ / 2 * L / N)^2 / z_circ / λ, digits=3))
 "
+
+# ╔═╡ 6a977f39-626a-441a-816a-66f4b8e0c64c
+z_circ / L
 
 # ╔═╡ 764349e1-3b12-412b-bcdd-ba1bb64bc391
 z_circ
@@ -322,23 +327,20 @@ simshow(U_circ)
 # ╔═╡ 77f6528c-cf26-465e-a5bd-7bd336e1b4bc
 @time as_circ = angular_spectrum(select_region(U_circ, new_size=round.(Int, size(U_circ) .* M)), z_circ, λ, L * M)
 
-# ╔═╡ 3524374c-97f0-4cdd-88cd-7ffbdb52834c
-simshow(abs2.(as_circ[1]), γ=0.5)
-
 # ╔═╡ dd434bfd-c14d-4417-922a-01a573c44143
-@time sft_fr_circ = fresnel(resample(U_circ,size(U_circ).÷2), z_circ, λ, L, skip_final_phase=false)
-
-# ╔═╡ 49c66347-dfdb-462e-84e4-92aaef26891e
-simshow(abs2.(resample(select_region(sft_fr_circ[1], new_size=(N, N).÷2), (N, N))), γ=0.5)
+@time sft_fr_circ = select_region(fresnel(select_region(U_circ, M=2), z_circ, λ, 2 * L, skip_final_phase=true)[1], M=0.5);
 
 # ╔═╡ 6af0bc99-4245-44f8-bc45-405f9e56b513
-@time sas_circ = scalable_angular_spectrum(U_circ, z_circ, λ, L, skip_final_phase=false)
+@time sas_circ = scalable_angular_spectrum(U_circ, z_circ, λ, L, bandlimit_border=(0.9, 1));
 
-# ╔═╡ d494c7fc-a165-41ad-9634-0efbe628750a
-@time fresnel(U_circ, z_circ, λ, L, skip_final_phase=false)[1]
+# ╔═╡ 3524374c-97f0-4cdd-88cd-7ffbdb52834c
+simshow(abs2.(as_circ[1]), γ=0.3, cmap=:inferno)
 
-# ╔═╡ d5fdc880-6d6a-4bb1-9167-f16340361897
-simshow(abs2.(resample(sas_circ[1], M .* (N,N))), γ=0.5)
+# ╔═╡ b95302c7-0385-46ac-8f53-2e6cf7cecea9
+simshow(abs2.(sft_fr_circ), γ=0.3, cmap=:inferno)
+
+# ╔═╡ c4f2b545-cd1d-4ae2-bccb-7a89119ae7df
+simshow(abs2.(sas_circ[1]), γ=0.3, cmap=:inferno)
 
 # ╔═╡ d623e68d-8cfd-4df8-af30-396097ddc6aa
 L_box = 128e-6;
@@ -374,20 +376,20 @@ The Fresnel number is $(round((D_box)^2 / z_box / λ, digits=3))
 # ╔═╡ e4bb5e06-0b89-4c27-885f-0d13da6d2ff0
 simshow(U_box)
 
-# ╔═╡ 2dde964f-667d-4a96-ae47-f8a17ae31f28
-L_box ./ N_box / λ
+# ╔═╡ 9d78321e-6586-4c31-bec7-279d23c79841
+@time as_box = angular_spectrum(select_region(U_box, new_size=round.(Int, size(U_box) .* M_box)), z_box, λ, L_box * M_box);
 
 # ╔═╡ dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
-@time sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=true)
-
-# ╔═╡ a2ac2498-7c68-47c7-8a86-227da43cf482
-@time fresnel(U_box, z_box, λ, L_box, skip_final_phase=true)
-
-# ╔═╡ ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
-simshow(abs.(resample(abs2.(sft_fr_box[1]), M_box .* (N_box, N_box))), γ=0.13, cmap=:inferno)
+@time sft_fr_box = select_region(fresnel(select_region(U_box, M=2), z_box, λ, L_box, skip_final_phase=true)[1], M=1//2);
 
 # ╔═╡ b3e31f75-5216-47b5-85b3-026a0321c0a8
-@time sas_box = scalable_angular_spectrum(U_box, z_box, λ, L_box, bandlimit_soft_px=20, skip_final_phase=true)
+@time sas_box = scalable_angular_spectrum(U_box, z_box, λ, L_box, bandlimit_border=(0.8, 1.0), skip_final_phase=true);
+
+# ╔═╡ d128d0ec-61bd-46a2-a915-e42220cd09cc
+simshow(abs2.(as_box[1]), γ=0.13, cmap=:inferno)
+
+# ╔═╡ ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
+simshow(abs2.(sft_fr_box), γ=0.13, cmap=:inferno)
 
 # ╔═╡ 9c46ad96-96ac-4d40-bfec-d146451f1130
 simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
@@ -2188,22 +2190,21 @@ version = "1.4.1+0"
 # ╠═83d8201f-6c96-4849-871b-99409abfc5f8
 # ╟─d0e12818-286b-475d-b76b-da777073e72a
 # ╠═b87f5371-13b0-4c73-91fb-8108a5a80a3e
-# ╠═02cddba9-a561-4360-bfe4-805f7bf53251
 # ╠═e53711d2-68ed-4712-82ba-c11bc14ffab3
+# ╠═529a3df1-8a18-416e-9730-14eb10302fbb
 # ╠═e05c6882-81f9-4784-ab7e-7a9a8d296b6d
-# ╠═45e9dad4-8f26-45c6-b58e-93d634881f60
-# ╠═71f123f7-0b47-427c-b96f-d80d80907434
+# ╟─45e9dad4-8f26-45c6-b58e-93d634881f60
 # ╠═adfcc771-e092-4dd3-8ff9-9a940c1c29a3
 # ╟─2c6d0d9b-9617-40d3-859d-4c5de8cafbd7
 # ╠═2177f522-9ccb-4b96-8bd5-92718f0d5cc6
-# ╠═58481d63-d11e-4780-ade1-27cd5a828f20
-# ╠═3437a418-25c6-425d-978d-8342f3e84e66
 # ╟─004097d8-1906-4151-a4f3-4be7f7a71434
 # ╠═fdb237d3-5c00-463c-9671-3de7ee3e2bcc
 # ╠═4db3a990-4e5d-4fe7-89cc-4823d1b5b592
 # ╟─c7194950-26ff-4972-81be-1fabf1ba9dcf
 # ╠═fd94ba72-5130-40e8-884c-37899b2f2fa7
 # ╠═0c62447e-cc20-4e68-a645-367dd823b507
+# ╠═76fc433a-fc15-4660-b7ad-436c4d756488
+# ╠═6a977f39-626a-441a-816a-66f4b8e0c64c
 # ╠═8cc751a6-aa3a-4095-97a3-256ba37d3faa
 # ╠═a53ce9e8-1f86-40ee-949c-378cf486af1b
 # ╠═d58452cc-d4b7-4d6f-9c39-fd8329291cdd
@@ -2213,12 +2214,11 @@ version = "1.4.1+0"
 # ╠═764349e1-3b12-412b-bcdd-ba1bb64bc391
 # ╠═0cd5c3e8-39ca-40be-8fef-17faf7738b45
 # ╠═77f6528c-cf26-465e-a5bd-7bd336e1b4bc
-# ╠═3524374c-97f0-4cdd-88cd-7ffbdb52834c
 # ╠═dd434bfd-c14d-4417-922a-01a573c44143
-# ╠═49c66347-dfdb-462e-84e4-92aaef26891e
 # ╠═6af0bc99-4245-44f8-bc45-405f9e56b513
-# ╠═d494c7fc-a165-41ad-9634-0efbe628750a
-# ╠═d5fdc880-6d6a-4bb1-9167-f16340361897
+# ╠═3524374c-97f0-4cdd-88cd-7ffbdb52834c
+# ╠═b95302c7-0385-46ac-8f53-2e6cf7cecea9
+# ╠═c4f2b545-cd1d-4ae2-bccb-7a89119ae7df
 # ╟─1815437a-332c-4bc1-9b72-b75cd4b8b653
 # ╠═d623e68d-8cfd-4df8-af30-396097ddc6aa
 # ╠═81c307a0-82d4-4514-8d28-12e12defcea2
@@ -2229,13 +2229,11 @@ version = "1.4.1+0"
 # ╠═af91c034-2f43-4786-aef7-a7bce45ab38e
 # ╠═7b13f72d-6e5d-440b-b080-1301a1560acc
 # ╠═e4bb5e06-0b89-4c27-885f-0d13da6d2ff0
-# ╠═2dde964f-667d-4a96-ae47-f8a17ae31f28
 # ╠═9d78321e-6586-4c31-bec7-279d23c79841
-# ╠═d128d0ec-61bd-46a2-a915-e42220cd09cc
 # ╠═dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
-# ╠═a2ac2498-7c68-47c7-8a86-227da43cf482
-# ╠═ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
 # ╠═b3e31f75-5216-47b5-85b3-026a0321c0a8
+# ╠═d128d0ec-61bd-46a2-a915-e42220cd09cc
+# ╠═ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
 # ╠═9c46ad96-96ac-4d40-bfec-d146451f1130
 # ╟─7ae68d67-531f-4eb9-abc7-50d9acaeb5f7
 # ╠═e872129e-a6a9-4a79-bbfb-256d3080cb38
