@@ -206,11 +206,11 @@ end
 
 # ╔═╡ 4db3a990-4e5d-4fe7-89cc-4823d1b5b592
 """
-	scaled_angular_spectrum(field, z, λ, L; skip_final_phase=true)
+	scalable_angular_spectrum(field, z, λ, L; skip_final_phase=true)
 
 Returns the the electrical field with physical length `L` and wavelength `λ` propagated with the Scaled Angular Spectrum (SAS) of plane waves (AS) by the propagation distance `z`.
 """
-function scaled_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ; 
+function scalable_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ; 
 								 pad_factor=2, skip_final_phase=true,  set_pad_zero=false, bandlimit_soft_px=20) where {T} 
 	@assert bandlimit_soft_px ≥ 0 "bandlimit_soft_px must be ≥ 0"
 	@assert size(ψ₀, 1) == size(ψ₀, 2) "Restricted to auadratic fields."
@@ -332,7 +332,7 @@ simshow(abs2.(as_circ[1]), γ=0.5)
 simshow(abs2.(resample(select_region(sft_fr_circ[1], new_size=(N, N).÷2), (N, N))), γ=0.5)
 
 # ╔═╡ 6af0bc99-4245-44f8-bc45-405f9e56b513
-@time sas_circ = scaled_angular_spectrum(U_circ, z_circ, λ, L, skip_final_phase=false)
+@time sas_circ = scalable_angular_spectrum(U_circ, z_circ, λ, L, skip_final_phase=false)
 
 # ╔═╡ d494c7fc-a165-41ad-9634-0efbe628750a
 @time fresnel(U_circ, z_circ, λ, L, skip_final_phase=false)[1]
@@ -377,17 +377,6 @@ simshow(U_box)
 # ╔═╡ 2dde964f-667d-4a96-ae47-f8a17ae31f28
 L_box ./ N_box / λ
 
-# ╔═╡ 9d78321e-6586-4c31-bec7-279d23c79841
-# ╠═╡ disabled = true
-#=╠═╡
-@time as_box = angular_spectrum(select_region(U_box, new_size=round.(Int, size(U_box) .* M_box)), z_box, λ, L_box * M_box)
-  ╠═╡ =#
-
-# ╔═╡ d128d0ec-61bd-46a2-a915-e42220cd09cc
-#=╠═╡
-simshow(abs2.(as_box[1]), γ=0.13, cmap=:inferno)
-  ╠═╡ =#
-
 # ╔═╡ dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
 @time sft_fr_box = fresnel(resample(U_box,size(U_box) .÷ 2), z_box, λ, L_box, skip_final_phase=true)
 
@@ -398,7 +387,7 @@ simshow(abs2.(as_box[1]), γ=0.13, cmap=:inferno)
 simshow(abs.(resample(abs2.(sft_fr_box[1]), M_box .* (N_box, N_box))), γ=0.13, cmap=:inferno)
 
 # ╔═╡ b3e31f75-5216-47b5-85b3-026a0321c0a8
-@time sas_box = scaled_angular_spectrum(U_box, z_box, λ, L_box, bandlimit_soft_px=20, skip_final_phase=true)
+@time sas_box = scalable_angular_spectrum(U_box, z_box, λ, L_box, bandlimit_soft_px=20, skip_final_phase=true)
 
 # ╔═╡ 9c46ad96-96ac-4d40-bfec-d146451f1130
 simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
@@ -434,7 +423,7 @@ U_int = box((N_int, N_int), (N÷10,N÷10), offset=(50, 50)) .* exp.(1im .* 2π .
 simshow(U_int)
 
 # ╔═╡ 0ed55066-14e8-43f3-b4c1-14d2585b802b
-U_int_sas,tt = scaled_angular_spectrum(U_int, z_int, λ, L_int, bandlimit_soft_px=20);
+U_int_sas,tt = scalable_angular_spectrum(U_int, z_int, λ, L_int, bandlimit_soft_px=20);
 
 # ╔═╡ 14fdb70d-519c-4d31-b4c1-d4e95d6d47da
 simshow(fftshift(tt.:ψ_precomp), γ=0.1)
@@ -515,7 +504,7 @@ end;
 simshow(mask_disc .+ mask_box)
 
 # ╔═╡ 242ac622-de2c-481b-a996-31a5a026d6de
-simshow(abs2.(scaled_angular_spectrum(0.0 .* mask_disc .+ mask_box, z0, λ, L2[1]/2 )[1]), γ=0.2)
+simshow(abs2.(scalable_angular_spectrum(0.0 .* mask_disc .+ mask_box, z0, λ, L2[1]/2 )[1]), γ=0.2)
 
 # ╔═╡ 57abdeba-4604-49ed-a9ba-fe0de5e48a83
 simshow(abs2.(fresnel(0.0 .* mask_disc .+ mask_box, z0, λ, L2[1]/2 )[1]), γ=0.2)
@@ -567,7 +556,7 @@ end;
 simshow(mask_boxb)
 
 # ╔═╡ 17120989-dcbd-4786-aa5d-1e1847d0f247
-simshow(abs2.(scaled_angular_spectrum(mask_boxb, zb, λ, Lb[1]/2)[1]), γ=0.2)
+simshow(abs2.(scalable_angular_spectrum(mask_boxb, zb, λ, Lb[1]/2)[1]), γ=0.2)
 
 # ╔═╡ 1c94e5ab-45a1-433a-80b2-4c7c469ca6b9
 simshow(abs2.(angular_spectrum(mask_boxb, zb, λ, Lb[1]/2)[1]), γ=0.2)
@@ -611,7 +600,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.8.5"
 manifest_format = "2.0"
-project_hash = "13eeddf56751c2181e18b39d3d7ea4148f511d0a"
+project_hash = "a2268671eb828f9795ab24495550f7ddfb342ea8"
 
 [[deps.ATK_jll]]
 deps = ["Artifacts", "Glib_jll", "JLLWrappers", "Libdl", "Pkg"]
