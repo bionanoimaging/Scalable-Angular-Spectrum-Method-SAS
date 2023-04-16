@@ -18,6 +18,9 @@ julia > using Pluto
 Download the file [SAS_examples.jl](SAS_examples.jl). From within Pluto, open this file.
 Everything should go fine from now on.
 
+# License
+Check the conditions of the [License](LICENSE.md)
+
 
 # Bugs, Issues
 Please feel free to file issues and bugs here on GitHub! Also, if you have any question regarding the paper, post it here too!
