@@ -19,7 +19,7 @@ Download the file [SAS_examples.jl](SAS_examples.jl). From within Pluto, open th
 Everything should go fine from now on.
 
 # License
-Check the conditions of the [License](LICENSE.md).
+Check the conditions of the [License](LICENSE).
 
 
 # Bugs, Issues
