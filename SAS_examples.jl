@@ -334,13 +334,13 @@ simshow(U_circ)
 @time sas_circ = scalable_angular_spectrum(U_circ, z_circ, λ, L, bandlimit_border=(0.9, 1));
 
 # ╔═╡ 3524374c-97f0-4cdd-88cd-7ffbdb52834c
-simshow(abs2.(as_circ[1]), γ=0.3, cmap=:inferno)
+simshow(abs2.(as_circ[1]), γ=0.13, cmap=:inferno)
 
 # ╔═╡ b95302c7-0385-46ac-8f53-2e6cf7cecea9
-simshow(abs2.(sft_fr_circ), γ=0.3, cmap=:inferno)
+simshow(abs2.(sft_fr_circ), γ=0.13, cmap=:inferno)
 
 # ╔═╡ c4f2b545-cd1d-4ae2-bccb-7a89119ae7df
-simshow(abs2.(sas_circ[1]), γ=0.3, cmap=:inferno)
+simshow(abs2.(sas_circ[1]), γ=.13, cmap=:inferno)
 
 # ╔═╡ d623e68d-8cfd-4df8-af30-396097ddc6aa
 L_box = 128e-6;
