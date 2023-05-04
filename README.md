@@ -5,7 +5,9 @@ Implementations of the Angular Spectrum Method for optical wave propagation in P
 Implementation in Python and [PyTorch](https://pytorch.org/). Hence, it can be used within neural networks and automatic differentiation.
 See this [Jupyter notebook](SAS_pytorch.ipynb).
 Install
-`pip install numpy matplotlib torch notebook`
+```
+pip install numpy matplotlib torch notebook
+
 to run the Python notebook.
 
 
