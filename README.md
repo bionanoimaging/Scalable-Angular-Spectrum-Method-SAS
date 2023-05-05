@@ -1,6 +1,8 @@
 # Scalable Angular Spectrum Method SAS
-Implementations of the Angular Spectrum Method for optical wave propagation in Python + PyTorch and Julia Lang.
+Implementations of the Scalable Angular Spectrum (SAS) method for optical wave propagation in Python + PyTorch and Julia Lang.
 
+# License
+Check the conditions of the [license](LICENSE).
 
 
 # Julia Code
@@ -18,8 +20,6 @@ Everything should go fine from now on.
 ## Reproducibility
 Pluto notebooks are highly reproducible because of the pinned versions of all dependencies. So running this notebook with Julia 1.8.5 is reproducible. You do not have to handle the versions yourself. Everything is done by Pluto.jl.
 
-
-
 # Python
 Implementation in Python and [PyTorch](https://pytorch.org/). Hence, it can be used within neural networks and automatic differentiation.
 See this [Jupyter notebook](SAS_pytorch.ipynb).
@@ -29,10 +29,8 @@ pip install numpy matplotlib torch notebook
 ```
 to run the Python notebook.
 
-
-# License
-Check the conditions of the [license](LICENSE).
-
+# Literature
+Please have a look of this preprint on arXiv.
 
 # Bugs, Issues
 Please feel free to file issues and bugs here on GitHub! Also, if you have any question regarding the paper, post it here too!
