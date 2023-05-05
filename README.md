@@ -1,6 +1,9 @@
 # Scalable Angular Spectrum Method SAS
 Implementations of the Scalable Angular Spectrum (SAS) method for optical wave propagation in Python + PyTorch and Julia Lang.
 
+put an exmaple here
+
+
 # License
 Check the conditions of the [license](LICENSE).
 
