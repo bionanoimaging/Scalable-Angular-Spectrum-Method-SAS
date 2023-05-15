@@ -86,14 +86,30 @@ function show_Ms()
         zL = round(z_L.(myR)*100)/100
         NA = round(na_from_z_L(zL)*100)/100
         # NA = na_from_z_L(zL)
-        display(annotate!(myR-0.08, z_L.(myR), text("∘ M=$(M), NAₘ=$(NA)", :blue, :left, 10)))
+        display(annotate!(myR-0.08, z_L.(myR), text("∘           M=$(M), NAₘ=$(NA)", :blue, :left, 10)))
         # display(annotate!(myR-0.08, z_L.(myR), text("∘ M=$(M), z/L=$(zL)", :green, :left, 10)))
     end
 end
 
 show_Ms()
 
+function plot_RM(R, M, col=:green, sym="x", toleft=0.09)
+    zL = M * 2 * R
+    display(annotate!(R-toleft, zL, text("$(sym)   M=$(M)", col, :left, 8)))
+end
+
+# Add a green dot for R=0.5, M=5
+plot_RM(0.5, 5, :green)
+# Add a purple dot for R=0.5, M=15
+plot_RM(0.5, 15, :purple)
+
+# Fig. 6: M∘=4, R = (64µm / 512) / 0.5µm = 0.25
+plot_RM(0.25, 4, :black, "∘", 0.08)
+# Fig. 7: M_⧆=8, R = (128µm / 512) / 0.5µm = 0.5
+plot_RM(0.5, 8, :black, "⧆", 0.08)
+
 other_x!((0,14))
+
 
 # savefig("propagation_distance_sas_3ax.pdf")
 
