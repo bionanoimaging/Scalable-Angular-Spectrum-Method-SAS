@@ -1,7 +1,13 @@
 # Scalable Angular Spectrum Method SAS
 Implementations of the Scalable Angular Spectrum (SAS) method for optical wave propagation in Python + PyTorch and Julia Lang.
+The SAS allows to propagate optical waves exactly over long distances and high magnifications. 
+It features a much higher speed the the Angular Spectrum (AS) method and is more precise than the single-step Fresnel method.
+It's implementation essentially consists of three FFTs and some phase factors.
 
-put an exmaple here
+This image compares the three methods for accuracy.
+[](example.png)
+
+
 
 
 # License
