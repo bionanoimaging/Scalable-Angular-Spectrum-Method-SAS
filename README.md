@@ -41,8 +41,5 @@ pip install numpy matplotlib torch notebook
 ```
 to run the Python notebook.
 
-# Literature
-Please have a look of this preprint on arXiv.
-
 # Bugs, Issues
 Please feel free to file issues and bugs here on GitHub! Also, if you have any question regarding the paper, post it here too!
