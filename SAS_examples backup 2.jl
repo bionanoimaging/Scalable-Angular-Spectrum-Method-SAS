@@ -4,17 +4,8 @@
 using Markdown
 using InteractiveUtils
 
-# ╔═╡ c4dad01b-f1ae-46ed-a3dd-a3ed09ecf96b
-import Pkg
-
-# ╔═╡ 6c4e64ce-842f-4618-a7c2-756ed3065680
-Pkg.add("ImageView");
-
 # ╔═╡ 4f0ea44a-5475-11ed-3979-6d7d4c1a8ce1
 using FFTW, NDTools, Interpolations, IndexFunArrays, Colors, ImageShow, ImageIO, FourierTools, Plots, Interpolations, PlutoUI, ImageView, ColorSchemes, TestImages
-
-# ╔═╡ b1486e8d-0b5e-4d17-ac74-1f277596a660
-using Random;
 
 # ╔═╡ 2bd51f20-7abb-4d95-a56b-c2e058c2a1be
 md"# Scaled Angular Spectrum
@@ -166,7 +157,7 @@ function angular_spectrum(field::Matrix{T}, z, λ, L; pad_factor = 2) where T
 		 smooth_f.(abs2.(f_x) ./ u_limit^2 .+ abs2.(f_y) * λ^2, 0.8, 1))
 	
 	# propagate field
-	field_out = fftshift(ifft(fft(ifftshift(field_new)) .* H )) # .* W
+	field_out = fftshift(ifft(fft(ifftshift(field_new)) .* H .* W))
 	# take center part because of circular convolution
 	field_out_cropped = select_region(field_out, new_size=size(field))
 	
@@ -412,22 +403,16 @@ A hologram generates 5x5 beamlets at 10mm distance.
 "
 
 # ╔═╡ d0841cb8-3b2a-4242-8769-fe9e2bca4915
-λh = 532e-9; Lh = 0.837*2*277.3e-6; Nh = 462;
-
-# ╔═╡ 0e84ef74-2f4c-42d9-bfc1-92c5d82c459a
-Δxh = Lh/Nh; # sampling in the source plane
+λh = 532e-9; Lh = 2*277.3e-6; Nh = 462;
 
 # ╔═╡ de1ef254-c6bc-4c31-ac03-2ee1cf57ed18
 yh = fftpos(Lh, Nh, NDTools.CenterFT);
 
-# ╔═╡ b4b5e6b2-a80f-4dd4-b12e-e991a9bad15a
-sigma = (100e-6/2)/sqrt(2)/Δxh; # sigma for the 100µm (2w0) width of the Gaussian
-
 # ╔═╡ 7330bc0f-d4f5-47a3-b8da-4df91e04f987
-illuh = gaussian((Nh,Nh), sigma=sigma);
+illuh = gaussian((Nh,Nh), sigma=20.0);
 
 # ╔═╡ 047b310a-01f7-45c3-af35-1a5fb1b1a2ad
-z_h = 10e-3; # 1cm propagation distance
+z_h = 10e-3;
 
 # ╔═╡ 4fcd98e4-6980-4716-bd32-ade190e07f20
 Lh / Nh / λh
@@ -435,63 +420,30 @@ Lh / Nh / λh
 # ╔═╡ d5369ebe-ac4a-4a70-9ebb-7ac189e85a55
 z_h / Lh
 
-# ╔═╡ d080f246-0c37-45d3-9ea4-b766d908c797
-maxkrel_h = sin(atan(0.5/10)); # 0.5mm spot distance @ 10mm propagation;
-
-# ╔═╡ 92e06b9d-2f6a-4dd2-a6c7-3ea1787655ea
-function get_hologram(λ, y, max_krel)
-	res = zeros(ComplexF64, (size(y,1), size(y,1)));
-	Random.seed!(42);
-	for n = -2:2
-		for m = -2:2
-			res += exp(1im * 2π *rand()) .* exp.(1im .* 2π ./ λ .* (y .* (max_krel*m).+y' .* (max_krel*n)));
-		end
-	end
-	discretized = exp.(1im .* round.(angle.(res).*16)./16);
-	return discretized;
-end
-
-# ╔═╡ 18a82e0b-4f69-42f1-b784-96be541173f1
-# get_hologram(λh, yh, maxkrel_h)
-
 # ╔═╡ a90bfca7-2c3e-4c92-97ee-1cc18f2f9692
-U_h = illuh.*get_hologram(λh, yh, maxkrel_h);
+U_h = illuh.*(exp.(1im .* 2π ./ λh .* yh .* sind(45)*0.1) .+ exp.(1im .* 2π ./ λh .* yh' .* sind(-45)*0.1));
+
+# ╔═╡ 0cf14312-d9fe-4b30-a434-086811a38ddc
+
 
 # ╔═╡ 61c6b13a-ff42-4eba-97d7-8820e4c59ac5
-simshow(U_h, γ=1)
+simshow(U_h)
 
 # ╔═╡ 05391390-f6ed-4123-a4fe-3e529feaf544
 @time sas_h = scalable_angular_spectrum(U_h, z_h, λh, Lh, bandlimit_border=(0.9, 1));
 
-# ╔═╡ 62dce63f-dcc4-46dc-9ce4-395da494497f
-M_h = (1.3277e-3*2)/Lh
-
-# ╔═╡ 70a2a5a1-7070-4ab4-8426-fb9e7218c042
-NumPix_ASPW = M_h*Lh / Δxh
-
-# ╔═╡ 923420d1-0b81-4b5a-b397-5d19bf8b4d22
-@time as_h = angular_spectrum(select_region(U_h, new_size=round.(Int, size(U_h) .* M_h)), z_h, λh, Lh * M_h, pad_factor=1);
-
-# ╔═╡ 9d13c4d6-fbc7-40fa-8478-64fdf090b90b
-size(as_h[1])
-
-# ╔═╡ 5e8305b3-9573-4d40-aa0a-52af633cbe69
-size(sas_h[1])
-
 # ╔═╡ e73facc3-d24d-49fc-8536-94dbc5705bc7
-simshow(abs2.(sas_h[1]), γ=1, cmap=:gray)
+simshow(abs2.(sas_h[1]), γ=0.13, cmap=:gray)
 
 # ╔═╡ 366cfdfa-0611-4a3f-9eba-28b7adf04f30
-L_dest = sas_h[2].L*1e3 # field width in mm in the destination plane
+sas_h[2].L*1e3 # field width in mm
 
-# ╔═╡ 281f7278-9525-4896-b91c-87451c6b4992
-simshow(abs2.(as_h[1]), γ=1, cmap=:gray)
+# ╔═╡ 27386598-bf41-4bff-8ad8-ea40536c7d02
+
 
 # ╔═╡ Cell order:
 # ╟─2bd51f20-7abb-4d95-a56b-c2e058c2a1be
 # ╟─15975d27-b575-4e76-94a7-02b8f218acb1
-# ╠═c4dad01b-f1ae-46ed-a3dd-a3ed09ecf96b
-# ╠═6c4e64ce-842f-4618-a7c2-756ed3065680
 # ╠═4f0ea44a-5475-11ed-3979-6d7d4c1a8ce1
 # ╠═45dabf95-ede9-46c5-896c-39945a2029e7
 # ╠═83d8201f-6c96-4849-871b-99409abfc5f8
@@ -544,25 +496,15 @@ simshow(abs2.(as_h[1]), γ=1, cmap=:gray)
 # ╠═9c46ad96-96ac-4d40-bfec-d146451f1130
 # ╟─2f79966d-86a5-4066-a84e-a128c93247e8
 # ╠═d0841cb8-3b2a-4242-8769-fe9e2bca4915
-# ╠═0e84ef74-2f4c-42d9-bfc1-92c5d82c459a
 # ╠═de1ef254-c6bc-4c31-ac03-2ee1cf57ed18
-# ╠═b4b5e6b2-a80f-4dd4-b12e-e991a9bad15a
 # ╠═7330bc0f-d4f5-47a3-b8da-4df91e04f987
 # ╠═047b310a-01f7-45c3-af35-1a5fb1b1a2ad
 # ╠═4fcd98e4-6980-4716-bd32-ade190e07f20
 # ╠═d5369ebe-ac4a-4a70-9ebb-7ac189e85a55
-# ╠═d080f246-0c37-45d3-9ea4-b766d908c797
-# ╠═b1486e8d-0b5e-4d17-ac74-1f277596a660
-# ╠═92e06b9d-2f6a-4dd2-a6c7-3ea1787655ea
-# ╠═18a82e0b-4f69-42f1-b784-96be541173f1
 # ╠═a90bfca7-2c3e-4c92-97ee-1cc18f2f9692
+# ╠═0cf14312-d9fe-4b30-a434-086811a38ddc
 # ╠═61c6b13a-ff42-4eba-97d7-8820e4c59ac5
 # ╠═05391390-f6ed-4123-a4fe-3e529feaf544
-# ╠═62dce63f-dcc4-46dc-9ce4-395da494497f
-# ╠═70a2a5a1-7070-4ab4-8426-fb9e7218c042
-# ╠═923420d1-0b81-4b5a-b397-5d19bf8b4d22
-# ╠═9d13c4d6-fbc7-40fa-8478-64fdf090b90b
-# ╠═5e8305b3-9573-4d40-aa0a-52af633cbe69
 # ╠═e73facc3-d24d-49fc-8536-94dbc5705bc7
 # ╠═366cfdfa-0611-4a3f-9eba-28b7adf04f30
-# ╠═281f7278-9525-4896-b91c-87451c6b4992
+# ╠═27386598-bf41-4bff-8ad8-ea40536c7d02
