@@ -26,7 +26,7 @@ Check the conditions of the [license](LICENSE).
 
 
 # Julia Code
-Tested with [Julia 1.8](https://julialang.org/downloads/). Download the software and install it on your computer. 
+Tested with [Julia 1.9](https://julialang.org/downloads/). Download the software and install it on your computer. 
 Open the REPL and type (type really a `]` to enter the package manager. Delete the `]` to go back to REPL):
 ```julia
 julia > ]add Pluto
