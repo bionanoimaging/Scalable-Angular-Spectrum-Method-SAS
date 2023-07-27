@@ -38,7 +38,7 @@ Download the file [SAS_examples.jl](SAS_examples.jl). From within Pluto, open th
 Everything should go fine from now on.
 
 ## Reproducibility
-Pluto notebooks are highly reproducible because of the pinned versions of all dependencies. So running this notebook with Julia 1.8.5 is reproducible. You do not have to handle the versions yourself. Everything is done by Pluto.jl.
+Pluto notebooks are highly reproducible because of the pinned versions of all dependencies. So running this notebook with Julia 1.9.1 is reproducible. You do not have to handle the versions yourself. Everything is done by Pluto.jl.
 
 # Python
 Implementation in Python and [PyTorch](https://pytorch.org/). Hence, it can be used within neural networks and automatic differentiation.
