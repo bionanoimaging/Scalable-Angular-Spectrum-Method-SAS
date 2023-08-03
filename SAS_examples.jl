@@ -1,11 +1,11 @@
 ### A Pluto.jl notebook ###
-# v0.19.26
+# v0.19.27
 
 using Markdown
 using InteractiveUtils
 
 # ╔═╡ 4f0ea44a-5475-11ed-3979-6d7d4c1a8ce1
-using FFTW, NDTools, Interpolations, IndexFunArrays, Colors, ImageShow, ImageIO, FourierTools, Plots, Interpolations, PlutoUI, ImageView, ColorSchemes, TestImages
+using FFTW, NDTools, Interpolations, IndexFunArrays, Colors, ImageShow, ImageIO, FourierTools, Plots, Interpolations, PlutoUI, ColorSchemes, TestImages
 
 # ╔═╡ b1486e8d-0b5e-4d17-ac74-1f277596a660
 using Random;
@@ -129,11 +129,13 @@ end
 
 # ╔═╡ adfcc771-e092-4dd3-8ff9-9a940c1c29a3
 """
-	angular_spectrum(field, z, λ, L)
+	angular_spectrum(field, z, λ, L; pad_factor = 2, apply_bandlimit = true)
 
 Returns the the electrical field with physical length `L` and wavelength `λ` propagated with the angular spectrum method of plane waves (AS) by the propagation distance `z`.
+`pad_factor` allows to defined how much zero-padding relative to the field to propagate is used.
+`apply_bandlimt` defines whether high-angle rays (undersampled phases in Fourier space) are suppressed
 """
-function angular_spectrum(field::Matrix{T}, z, λ, L; pad_factor = 2) where T
+function angular_spectrum(field::Matrix{T}, z, λ, L; pad_factor = 2, apply_bandlimit = false) where T
 	@assert size(field, 1) == size(field, 2) "Restricted to auadratic fields."
 	# we need to apply padding to prevent circular convolution
 	L_new = pad_factor .* L
@@ -146,21 +148,26 @@ function angular_spectrum(field::Matrix{T}, z, λ, L; pad_factor = 2) where T
 	
 	# transfer function kernel of angular spectrum
 	H = exp.(1im .* k .* z .* sqrt.(0im .+ 1 .- abs2.(f_x .* λ) .- abs2.(f_y .* λ)))
-	
-	# bandlimit according to Matsushima
-	# as addition we introduce a smooth bandlimit with a Hann window
-	# and fuzzy logic 
-	Δu =   1 / L_new
-	u_limit = 1 / (sqrt((2 * Δu * z)^2 + 1) * λ)
-	smooth_f(x, α, β) = hann(scale(x, α, β))	
-	
-	# bandlimit filter
-	# smoothing at 0.8 is arbitrary but works well
-	W = .*(smooth_f.(abs2.(f_y) ./ u_limit^2 .+ abs2.(f_x) * λ^2, 0.8, 1),
-		 smooth_f.(abs2.(f_x) ./ u_limit^2 .+ abs2.(f_y) * λ^2, 0.8, 1))
-	
+
+	if (apply_bandlimit)
+		# bandlimit according to Matsushima
+		# as addition we introduce a smooth bandlimit with a Hann window
+		# and fuzzy logic 
+		Δu =   1 / L_new
+		u_limit = 1 / (sqrt((2 * Δu * z)^2 + 1) * λ)
+		smooth_f(x, α, β) = hann(scale(x, α, β))	
+		
+		# bandlimit filter
+		# smoothing at 0.8 is arbitrary but works well
+		W = .*(smooth_f.(abs2.(f_y) ./ u_limit^2 .+ abs2.(f_x) * λ^2, 0.8, 1),
+			 smooth_f.(abs2.(f_x) ./ u_limit^2 .+ abs2.(f_y) * λ^2, 0.8, 1))
+
+		# apply band-limit
+		H .*= W;
+	end
+	println("pixels to propagate: $(size(H,1))x$(size(H,2)).")
 	# propagate field
-	field_out = fftshift(ifft(fft(ifftshift(field_new)) .* H )) # .* W
+	field_out = fftshift(ifft(fft(ifftshift(field_new)) .* H ))
 	# take center part because of circular convolution
 	field_out_cropped = select_region(field_out, new_size=size(field))
 	
@@ -221,15 +228,15 @@ end
 
 # ╔═╡ 4db3a990-4e5d-4fe7-89cc-4823d1b5b592
 """
-	scalable_angular_spectrum(field, z, λ, L; skip_final_phase=true)
+	scalable_angular_spectrum(field, z, λ, L; skip_final_phase=true, apply_bandlimit = true)
 
 Returns the the electrical field with physical length `L` and wavelength `λ` propagated with the Scaled Angular Spectrum (SAS) of plane waves (AS) by the propagation distance `z`.
 """
 function scalable_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ; 
 								 pad_factor=2, skip_final_phase=true,  set_pad_zero=false, bandlimit_soft_px=20,
-								bandlimit_border=(0.8, 1)) where {T} 
+								bandlimit_border=(0.8, 1), apply_bandlimit = true) where {T} 
 	@assert bandlimit_soft_px ≥ 0 "bandlimit_soft_px must be ≥ 0"
-	@assert size(ψ₀, 1) == size(ψ₀, 2) "Restricted to auadratic fields."
+	@assert size(ψ₀, 1) == size(ψ₀, 2) "Restricted to quadratic fields."
 	
 	
 	N = size(ψ₀, 1)
@@ -249,20 +256,24 @@ function scalable_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 	cy = λ .* f_y 
 	tx = L_new / 2 / z .+ abs.(λ .* f_x)
 	ty = L_new / 2 / z .+ abs.(λ .* f_y)
-	
-	# smooth window function
-	smooth_f(x, α, β) = hann(scale(x, α, β))
-	# find boundary for soft hann
-	ineq_x = fftshift(cx[1, :].^2 .* (1 .+ tx[1, :].^2) ./ tx[1, :].^2 .+ cy[1, :].^2)
-	limits = find_width_window(ineq_x, bandlimit_border)
 
-	# bandlimit filter for precompensation
-	W = .*(smooth_f.(cx.^2 .* (1 .+ tx.^2) ./ tx.^2 .+ cy.^2, limits...),
-	 		smooth_f.(cy.^2 .* (1 .+ ty.^2) ./ ty.^2 .+ cx.^2, limits...))
+	W = 1;
+	if (apply_bandlimit)
+		# smooth window function
+		smooth_f(x, α, β) = hann(scale(x, α, β))
+		# find boundary for soft hann
+		ineq_x = fftshift(cx[1, :].^2 .* (1 .+ tx[1, :].^2) ./ tx[1, :].^2 .+ cy[1, :].^2)
+		limits = find_width_window(ineq_x, bandlimit_border)
 	
+		# bandlimit filter for precompensation
+		W = .*(smooth_f.(cx.^2 .* (1 .+ tx.^2) ./ tx.^2 .+ cy.^2, limits...),
+		 		smooth_f.(cy.^2 .* (1 .+ ty.^2) ./ ty.^2 .+ cx.^2, limits...))	
+	end
 	# ΔH is the core part of Fresnel and AS
 	H_AS = sqrt.(0im .+ 1 .- abs2.(f_x .* λ) .- abs2.(f_y .* λ)) 
 	H_Fr = 1 .- abs2.(f_x .* λ) / 2 .- abs2.(f_y .* λ) / 2 
+	println("pixels to propagate: $(size(H_AS,1))x$(size(H_AS,2)).")
+	
 	# take the difference here, key part of the ScaledAS
 	ΔH = W .* exp.(1im .* k .* z .* (H_AS .- H_Fr)) 
 
@@ -401,8 +412,16 @@ simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
 md"# Third Example: Hologram
 
 
-Reproduce the example from Aoubar et al. JOS-A 31, 591 (Fig. 5)
-A hologram generates 5x5 beamlets at 10mm distance.
+Reproduce the example from Asoubar et al. JOS-A 31, 591 (Fig. 5 & Table 1)
+A hologram generates 5x5 beamlets at 10mm distance. The publication does not state the specifics of the hologram used. The table (Table 1) states the following values:
+- AS (SPW) propagation: 17521 x 17521, 0%
+- Fresnel: 462 x 462,  145%
+- Semianalytical SPW propagation (Taylor): 2053 x 2053,  0.006%
+- Semianalytical SPW propagation (Avoort): 1252 x 1252,  0.006%
+presumably the field to propagate has 462 x 462 pixels with the following parameters:
+- λ = 532 nm
+- L = 837 * 2 * 277.3 µm
+Since Asoubar et al. do not disclose the exact pattern to propagate ('diffractive beam splitter, which consists of 16 discrete phase levels'), we calculated such phase levels by the help of an IFTA algorithm.
 "
 
 # ╔═╡ d0841cb8-3b2a-4242-8769-fe9e2bca4915
@@ -432,6 +451,16 @@ z_h / Lh
 # ╔═╡ d080f246-0c37-45d3-9ea4-b766d908c797
 maxkrel_h = sin(atan(0.5/10)); # 0.5mm spot distance @ 10mm propagation;
 
+# ╔═╡ 794d4546-6b82-4d67-9ea8-265b520cfffe
+function discretize(amp, numlevels=16)
+	 return exp.(1im .* 2pi.*round.((angle.(amp).+2pi)./2pi.*numlevels)./numlevels);
+end
+
+# ╔═╡ 295f3bf2-6353-4927-b418-45c989100c20
+function replace_abs(amp, myabs)
+	return exp.(1im.*angle.(amp)) .* myabs;
+end
+
 # ╔═╡ 92e06b9d-2f6a-4dd2-a6c7-3ea1787655ea
 function get_hologram(λ, y, max_krel)
 	res = zeros(ComplexF64, (size(y,1), size(y,1)));
@@ -441,45 +470,195 @@ function get_hologram(λ, y, max_krel)
 			res += exp(1im * 2π *rand()) .* exp.(1im .* 2π ./ λ .* (y .* (max_krel*m).+y' .* (max_krel*n)));
 		end
 	end
-	discretized = exp.(1im .* round.(angle.(res).*16)./16);
-	return discretized;
+	return discretize(res);
 end
 
 # ╔═╡ 18a82e0b-4f69-42f1-b784-96be541173f1
-# get_hologram(λh, yh, maxkrel_h)
+function local_normalization(ftamp, ftreldist, bs=8)
+	avg_int = 0;
+	new_ft = ftamp .* 0;
+	N = 0;
+	for n = -2:2
+		for m = -2:2
+			mid = size(ftamp).÷2 .+1;
+			k_start = mid .+ round.(Int, size(ftamp) .* ftreldist .* [m,n])
+			roi = @view ftamp[k_start[1]-bs:k_start[1]+bs, k_start[2]-bs:k_start[2]+bs]
+			sum_int = sum(abs2.(roi));
+			avg_int += sum_int;
+			roi_new = @view new_ft[k_start[1]-bs:k_start[1]+bs, k_start[2]-bs:k_start[2]+bs]
+			roi_new .= roi ./ sqrt(sum_int);
+			N+=1;
+			# println("$N, $n x $m is $(sum_int)")
+		end
+	end
+	avg_int = avg_int/N;
+	new_ft .*= sqrt(avg_int);
+	return new_ft;
+end
 
-# ╔═╡ a90bfca7-2c3e-4c92-97ee-1cc18f2f9692
-U_h = illuh.*get_hologram(λh, yh, maxkrel_h);
+# ╔═╡ ec92354b-2cba-49a4-998a-7c6925733200
+function IFTA_hologram(illuh, λ, y, max_krel, steps=50)
+	holo = get_hologram(λ, y, max_krel)
+	Δx = yh[2]-yh[1];
+	ftreldist = maxkrel_h *Δx/λ;
+	sz = size(illuh);
+	mid_region = [sz[1].÷4:(3*sz[1]).÷4, sz[2].÷4:(3*sz[2]).÷4]
+	# obtain a normalized version and define 80% of it as the "goal"
+	ftamp = ft(illuh .* holo);
+	goal_abs_amp = abs.(local_normalization(ftamp, ftreldist)) .* 0.7;
+	goal_abs_amp_view =@view goal_abs_amp[mid_region...]
+	for n=1:steps
+		ftamp = ft(illuh .* holo);
+		mid_view = @view ftamp[mid_region...]
+		mid_view .= replace_abs(mid_view, goal_abs_amp_view)
+		holo = ift(ftamp);
+		holo = discretize(holo);
+	end
+	local_normalization(ft(illuh .* holo), ftreldist);
+	return holo;
+end
+
+# ╔═╡ bd264ae6-4dd3-493e-bd5f-b42444b620dd
+holo = IFTA_hologram(illuh, λh, yh, maxkrel_h, 150);
+
+# ╔═╡ 60c1ff88-fc06-4db4-a493-cbc44bf81e3e
+U_h = illuh .* holo;
 
 # ╔═╡ 61c6b13a-ff42-4eba-97d7-8820e4c59ac5
 simshow(U_h, γ=1)
 
+# ╔═╡ 00540988-e8e7-41cf-92b1-1afc91ea9ac8
+simshow(abs2.(ft(U_h)), γ=1)
+
+# ╔═╡ 35d43276-2ddd-4bed-902c-8d8e705e766a
+local_normalization(ft(U_h),  maxkrel_h *Δxh/λh);
+
 # ╔═╡ 05391390-f6ed-4123-a4fe-3e529feaf544
 @time sas_h = scalable_angular_spectrum(U_h, z_h, λh, Lh, bandlimit_border=(0.9, 1));
 
+# ╔═╡ 2b51977e-9257-4c8c-86bf-541f0b3799cd
+int_sas = abs2.(sas_h[1]);
+
+# ╔═╡ 47fa52ab-ce09-4120-a5d6-214f91ae18e6
+@time sas_hnb = scalable_angular_spectrum(U_h, z_h, λh, Lh, bandlimit_border=(0.9, 1), apply_bandlimit=false);
+
+# ╔═╡ 9accf8da-5b5a-4b08-b853-d0cec2259bcd
+int_sas_nb = abs2.(sas_hnb[1]);
+
 # ╔═╡ 62dce63f-dcc4-46dc-9ce4-395da494497f
-M_h = (1.3277e-3*2)/Lh
+M_h = (1.3277e-3*2)/Lh  # about 6-fold zero padding
 
 # ╔═╡ 70a2a5a1-7070-4ab4-8426-fb9e7218c042
-NumPix_ASPW = M_h*Lh / Δxh
+# NumPix_ASPW = M_h*Lh / Δxh * pad_factor
+
+# ╔═╡ 93cc7795-5919-451b-b1f8-7e6bc2c0a82c
+size(U_h).*M_h
 
 # ╔═╡ 923420d1-0b81-4b5a-b397-5d19bf8b4d22
-@time as_h = angular_spectrum(select_region(U_h, new_size=round.(Int, size(U_h) .* M_h)), z_h, λh, Lh * M_h, pad_factor=1);
+@time as_h = angular_spectrum(select_region(U_h, new_size=round.(Int, size(U_h) .* M_h)), z_h, λh, Lh * M_h, pad_factor=1, apply_bandlimit=false);
 
-# ╔═╡ 9d13c4d6-fbc7-40fa-8478-64fdf090b90b
-size(as_h[1])
+# ╔═╡ 31d5feec-df3e-4e97-b824-eab4cda3b93b
+int_h = abs2.(as_h[1]);
 
-# ╔═╡ 5e8305b3-9573-4d40-aa0a-52af633cbe69
-size(sas_h[1])
+# ╔═╡ 3c56caa8-89ff-4c8d-98d6-614dc1cb43ed
+@time as_hb = angular_spectrum(select_region(U_h, new_size=round.(Int, size(U_h) .* M_h)), z_h, λh, Lh * M_h, pad_factor=1, apply_bandlimit=true);
+
+# ╔═╡ 7f8dcada-f408-4c4e-923d-387de4eef636
+int_hb = abs2.(as_hb[1]);
+
+# ╔═╡ ea32264a-2482-4909-8ed3-3a7f8b54cdda
+@time as_hb2 = angular_spectrum(select_region(U_h, new_size=round.(Int, size(U_h) .* M_h)), z_h, λh, Lh * M_h, pad_factor=2, apply_bandlimit=true);
+
+# ╔═╡ 7a070377-98ee-4656-92b7-85743a356871
+int_hb2 = abs2.(as_hb2[1]);
+
+# ╔═╡ 256af6d2-8a16-4d18-8979-dd07f366415e
+@time as_hh = angular_spectrum(select_region(U_h, new_size=round.(Int, size(U_h) .* M_h)), z_h, λh, Lh * M_h, pad_factor=7);
+
+# ╔═╡ b1b71e0e-9dc5-40bf-befd-dc0bc5336db2
+int_hh = abs2.(as_hh[1]);
 
 # ╔═╡ e73facc3-d24d-49fc-8536-94dbc5705bc7
-simshow(abs2.(sas_h[1]), γ=1, cmap=:gray)
+simshow(int_sas, γ=1, cmap=:gray)
 
 # ╔═╡ 366cfdfa-0611-4a3f-9eba-28b7adf04f30
 L_dest = sas_h[2].L*1e3 # field width in mm in the destination plane
 
 # ╔═╡ 281f7278-9525-4896-b91c-87451c6b4992
-simshow(abs2.(as_h[1]), γ=1, cmap=:gray)
+simshow(int_hb, γ=1, cmap=:gray)
+
+# ╔═╡ abac7af2-f619-4554-9184-489ffbbec3b4
+L_dest_as = Lh * M_h*1e3 # field width in mm in the destination plane
+
+# ╔═╡ bd48aea7-6d69-459c-94b1-98f02decfefd
+size(int_hb)
+
+# ╔═╡ a70ddcc8-64fb-4689-b9af-138e63fc32ba
+new_size = round(Int, (L_dest)/(L_dest_as / size(int_hb,1)))
+
+# ╔═╡ 6a84efc5-0a56-4148-85d9-43f215cc9c74
+int_sas_rs = resample(int_sas, (new_size, new_size))/(new_size*new_size)*prod(size(int_sas));
+
+# ╔═╡ 924b8bca-5bae-4d7e-bc28-a8becb8043c2
+int_sasnb_rs = resample(int_sas_nb, (new_size, new_size))/(new_size*new_size)*prod(size(int_sas));
+
+# ╔═╡ d585a1ab-1396-4daf-851d-269a380c03be
+sum(int_sas_rs)
+
+# ╔═╡ 4bc485f1-5c58-4bb2-82ef-0c839935a59a
+sum(int_hb)
+
+# ╔═╡ 6e9b6bdd-bf91-473f-ab6d-c75ed2e82fa1
+md"# Comparison of Quality metrics
+with the norm according to Asoubar et al.
+
+No padding with AS propagation yields:
+"
+
+# ╔═╡ 36378d47-1dd6-432f-8e4b-234ddf5b01eb
+""" the comparison is based on cutting both arrays to the given size
+"""
+function compare(arr1,ref,sz)
+	arr1 = select_region(arr1, new_size=sz)
+	ref = select_region(ref, new_size=sz)
+	return sum(abs2.(arr1 .- ref)) / sum(abs2.(ref))
+end
+
+# ╔═╡ 7cf7b10e-4496-42a5-919b-37c12b4e8eef
+compare(int_h, int_hh, (new_size, new_size))*100 # AS 5.7 x padding, no suppression
+
+# ╔═╡ e8a6256e-b083-4f5c-b58b-5712f2f91b6d
+md"Matsushima suppression (no padding):"
+
+# ╔═╡ 2e5f40b6-92ea-4bd5-b7bc-5b9a2d67e483
+compare(int_hb, int_hh, (new_size, new_size))*100 # AS 5.7 padding matsushima
+
+# ╔═╡ e141037c-afae-41de-802f-d4aaadaada32
+md"Matsushima suppression (2x padding):"
+
+# ╔═╡ 21038f44-2f99-4ea5-abf2-81f22f04ef54
+compare(int_hb2, int_hh, (new_size, new_size))*100 # AS 2x 5.7 padding, matsushima
+
+# ╔═╡ 31c0eb54-f3ad-46f2-be1d-c42e531a4a14
+md"Fresnel propagation (no padding):"
+
+# ╔═╡ b7722ea3-c47d-4127-8cfc-840834be920d
+md"SAS propagation (2x padding):"
+
+# ╔═╡ 7ddb673a-70a8-4a6b-9e6d-898faf0d1cf3
+int_sas_rs_s = shift(int_sas_rs,(-0.5,-0.5));  # why is this shift necessary?
+
+# ╔═╡ d219c3d5-6e68-434c-a2b6-e07111238e75
+compare(int_sas_rs_s, int_hh, (new_size, new_size))*100 # SAS, 2x padding (924x924), resampled
+
+# ╔═╡ d4a6f36e-fb7a-491e-bbe1-7667d38da5b0
+int_sasnb_rs_s = shift(int_sasnb_rs,(-0.5,-0.5));  # why is this shift necessary?
+
+# ╔═╡ e540c671-7361-40e4-83e3-c5bbc3f175bb
+compare(int_sasnb_rs_s, int_hh, (new_size, new_size))*100 # SAS, 2x padding (924x924), resampled
+
+# ╔═╡ 6c836fa2-40ed-419e-8b57-52c9cdc85f79
+simshow(int_sas_rs_s .- select_region(int_hh,new_size=(new_size, new_size)) .+ 0.001, γ=1, cmap=:gray)
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -490,7 +669,6 @@ FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
 FourierTools = "b18b359b-aebc-45ac-a139-9c0ccbb2871e"
 ImageIO = "82e4d734-157c-48bb-816b-45c225c6df19"
 ImageShow = "4e3cecfd-b093-5904-9786-8bbb286a6a31"
-ImageView = "86fae568-95e7-573e-a6b2-d8a6b900c9ef"
 IndexFunArrays = "613c443e-d742-454e-bfc6-1d7f8dd76566"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 NDTools = "98581153-e998-4eef-8d0d-5ec2c052313d"
@@ -506,7 +684,6 @@ FFTW = "~1.7.1"
 FourierTools = "~0.4.2"
 ImageIO = "~0.6.6"
 ImageShow = "~0.3.7"
-ImageView = "~0.11.6"
 IndexFunArrays = "~0.2.6"
 Interpolations = "~0.14.7"
 NDTools = "~0.5.2"
@@ -519,15 +696,9 @@ TestImages = "~1.7.1"
 PLUTO_MANIFEST_TOML_CONTENTS = """
 # This file is machine-generated - editing it directly is not advised
 
-julia_version = "1.9.1"
+julia_version = "1.9.2"
 manifest_format = "2.0"
-project_hash = "290cc171e057d697cc6cc112e43fab06cd2b1d2e"
-
-[[deps.ATK_jll]]
-deps = ["Artifacts", "Glib_jll", "JLLWrappers", "Libdl"]
-git-tree-sha1 = "a2ecb68d240333fe63bea1965b71884e98c2d0f0"
-uuid = "7b86fcea-f67b-53e1-809c-8f1719c154e8"
-version = "2.38.0+0"
+project_hash = "a7db9b1b205997e256188c843ab57fdcc8159cdd"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -635,12 +806,6 @@ git-tree-sha1 = "eb4cb44a499229b3b8426dcfb5dd85333951ff90"
 uuid = "fa961155-64e5-5f13-b03f-caf6b980ea82"
 version = "0.4.2"
 
-[[deps.Cairo]]
-deps = ["Cairo_jll", "Colors", "Glib_jll", "Graphics", "Libdl", "Pango_jll"]
-git-tree-sha1 = "d0b3f8b4ad16cb0a2988c6788646a5e6a17b6b1b"
-uuid = "159f3aea-2a34-519c-b102-8c37f9878175"
-version = "1.0.5"
-
 [[deps.Cairo_jll]]
 deps = ["Artifacts", "Bzip2_jll", "CompilerSupportLibraries_jll", "Fontconfig_jll", "FreeType2_jll", "Glib_jll", "JLLWrappers", "LZO_jll", "Libdl", "Pixman_jll", "Pkg", "Xorg_libXext_jll", "Xorg_libXrender_jll", "Zlib_jll", "libpng_jll"]
 git-tree-sha1 = "4b859a208b2397a7a623a03449e4636bdb17bcf2"
@@ -696,7 +861,7 @@ weakdeps = ["Dates", "LinearAlgebra"]
 [[deps.CompilerSupportLibraries_jll]]
 deps = ["Artifacts", "Libdl"]
 uuid = "e66e0078-7015-5450-92f7-15fbd957f2ae"
-version = "1.0.2+0"
+version = "1.0.5+0"
 
 [[deps.CompositionsBase]]
 git-tree-sha1 = "802bb88cd69dfd1509f6670416bd4434015693ad"
@@ -756,12 +921,6 @@ version = "1.0.0"
 [[deps.Dates]]
 deps = ["Printf"]
 uuid = "ade2ca70-3891-5945-98fb-dc099432e06a"
-
-[[deps.Dbus_jll]]
-deps = ["Artifacts", "Expat_jll", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "97f1325c10bd02b1cc1882e9c2bf6407ba630ace"
-uuid = "ee1fde0b-3d02-5ea6-8484-8dfef6360eab"
-version = "1.12.16+3"
 
 [[deps.DefineSingletons]]
 git-tree-sha1 = "0fba8b706d0178b4dc7fd44a96a92382c9065c2c"
@@ -910,12 +1069,6 @@ git-tree-sha1 = "19fad9cd9ae44847fe842558a744748084a722d1"
 uuid = "d2c73de3-f751-5644-a686-071e5b155ba9"
 version = "0.72.7+0"
 
-[[deps.GTK3_jll]]
-deps = ["ATK_jll", "Artifacts", "Cairo_jll", "Fontconfig_jll", "FreeType2_jll", "FriBidi_jll", "Glib_jll", "HarfBuzz_jll", "JLLWrappers", "Libdl", "Libepoxy_jll", "Pango_jll", "Pkg", "Wayland_jll", "Xorg_libX11_jll", "Xorg_libXcomposite_jll", "Xorg_libXcursor_jll", "Xorg_libXdamage_jll", "Xorg_libXext_jll", "Xorg_libXfixes_jll", "Xorg_libXi_jll", "Xorg_libXinerama_jll", "Xorg_libXrandr_jll", "Xorg_libXrender_jll", "at_spi2_atk_jll", "gdk_pixbuf_jll", "iso_codes_jll", "xkbcommon_jll"]
-git-tree-sha1 = "b080a592525632d287aee4637a62682576b7f5e4"
-uuid = "77ec8976-b24b-556a-a1bf-49a033a670a6"
-version = "3.24.31+0"
-
 [[deps.Gettext_jll]]
 deps = ["Artifacts", "CompilerSupportLibraries_jll", "JLLWrappers", "Libdl", "Libiconv_jll", "Pkg", "XML2_jll"]
 git-tree-sha1 = "9b02998aba7bf074d14de89f9d37ca24a1a0b046"
@@ -950,18 +1103,6 @@ version = "1.3.14+0"
 git-tree-sha1 = "53bb909d1151e57e2484c3d1b53e19552b887fb2"
 uuid = "42e2da0e-8278-4e71-bc24-59509adca0fe"
 version = "1.0.2"
-
-[[deps.Gtk]]
-deps = ["Cairo", "Cairo_jll", "Dates", "GTK3_jll", "Glib_jll", "Graphics", "JLLWrappers", "Libdl", "Librsvg_jll", "Pkg", "Reexport", "Scratch", "Serialization", "Test", "Xorg_xkeyboard_config_jll", "adwaita_icon_theme_jll", "gdk_pixbuf_jll", "hicolor_icon_theme_jll"]
-git-tree-sha1 = "b502c9f626930385658f818edc62218956204fb4"
-uuid = "4c0ca9eb-093a-5379-98c5-f87ac0bbbf44"
-version = "1.3.0"
-
-[[deps.GtkObservables]]
-deps = ["Cairo", "Colors", "Dates", "FixedPointNumbers", "Graphics", "Gtk", "IntervalSets", "LinearAlgebra", "Observables", "PrecompileTools", "Reexport", "RoundingIntegers"]
-git-tree-sha1 = "7abc9367c964ed75a51ee85f8d65fad47af1ae77"
-uuid = "8710efd8-4ad6-11eb-33ea-2d5ceb25a41c"
-version = "1.2.9"
 
 [[deps.HTTP]]
 deps = ["Base64", "CodecZlib", "ConcurrentUtilities", "Dates", "ExceptionUnwrapping", "Logging", "LoggingExtras", "MbedTLS", "NetworkOptions", "OpenSSL", "Random", "SimpleBufferStream", "Sockets", "URIs", "UUIDs"]
@@ -1040,12 +1181,6 @@ deps = ["Base64", "ColorSchemes", "FileIO", "ImageBase", "ImageCore", "OffsetArr
 git-tree-sha1 = "ce28c68c900eed3cdbfa418be66ed053e54d4f56"
 uuid = "4e3cecfd-b093-5904-9786-8bbb286a6a31"
 version = "0.3.7"
-
-[[deps.ImageView]]
-deps = ["AxisArrays", "Cairo", "Compat", "Graphics", "Gtk", "GtkObservables", "ImageBase", "ImageCore", "ImageMetadata", "MultiChannelColors", "PrecompileTools", "RoundingIntegers", "StatsBase"]
-git-tree-sha1 = "fd1e470cce37db1285b97a91607714a24a6a455e"
-uuid = "86fae568-95e7-573e-a6b2-d8a6b900c9ef"
-version = "0.11.6"
 
 [[deps.Imath_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl"]
@@ -1221,12 +1356,6 @@ version = "1.10.2+0"
 [[deps.Libdl]]
 uuid = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 
-[[deps.Libepoxy_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Libglvnd_jll", "Pkg", "Xorg_libX11_jll"]
-git-tree-sha1 = "7a0158b71f8be5c771e7a273183b2d0ac35278c5"
-uuid = "42c93a91-0102-5b3f-8f9d-e41de60ac950"
-version = "1.5.10+0"
-
 [[deps.Libffi_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "0b4a5d71f3e5200a7dff793393e09dfc2d874290"
@@ -1262,12 +1391,6 @@ deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "9c30530bf0effd46e15e0fdcf2b8636e78cbbd73"
 uuid = "4b2f31a3-9ecc-558c-b454-b3730dcb73e9"
 version = "2.35.0+0"
-
-[[deps.Librsvg_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Pango_jll", "Pkg", "gdk_pixbuf_jll"]
-git-tree-sha1 = "ae0923dab7324e6bc980834f709c4cd83dd797ed"
-uuid = "925c91fb-5dd6-59dd-8e8c-345e74382d89"
-version = "2.54.5+0"
 
 [[deps.Libtiff_jll]]
 deps = ["Artifacts", "JLLWrappers", "JpegTurbo_jll", "LERC_jll", "Libdl", "Pkg", "Zlib_jll", "Zstd_jll"]
@@ -1394,12 +1517,6 @@ version = "0.3.4"
 uuid = "14a3606d-f60d-562e-9121-12d972cd8159"
 version = "2022.10.11"
 
-[[deps.MultiChannelColors]]
-deps = ["ColorTypes", "ColorVectorSpace", "Colors", "Compat", "FixedPointNumbers", "LinearAlgebra", "Reexport", "Requires"]
-git-tree-sha1 = "d93bbb3cf7891afb7f003b645e2dbc9b9d5b5bde"
-uuid = "d4071afc-4203-49ee-90bc-13ebeb18d604"
-version = "0.1.2"
-
 [[deps.NDTools]]
 deps = ["LinearAlgebra", "OffsetArrays", "PaddedViews", "Random", "Statistics"]
 git-tree-sha1 = "10e35b25261dfd361045e16afa9db5b14a4c1184"
@@ -1433,11 +1550,6 @@ version = "1.1.0"
 [[deps.NetworkOptions]]
 uuid = "ca575930-c2e3-43a9-ace4-1e988b2c1908"
 version = "1.2.0"
-
-[[deps.Observables]]
-git-tree-sha1 = "6862738f9796b3edc1c09d0890afce4eca9e7e93"
-uuid = "510215fc-4207-5dde-b226-833fc4488ee2"
-version = "0.5.4"
 
 [[deps.OffsetArrays]]
 deps = ["Adapt"]
@@ -1525,12 +1637,6 @@ git-tree-sha1 = "0fac6313486baae819364c52b4f483450a9d793f"
 uuid = "5432bcbf-9aad-5242-b902-cca2824c8663"
 version = "0.5.12"
 
-[[deps.Pango_jll]]
-deps = ["Artifacts", "Cairo_jll", "Fontconfig_jll", "FreeType2_jll", "FriBidi_jll", "Glib_jll", "HarfBuzz_jll", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "84a314e3926ba9ec66ac097e3635e270986b0f10"
-uuid = "36c8627f-9965-5494-a995-c6b170f724f3"
-version = "1.50.9+0"
-
 [[deps.Parsers]]
 deps = ["Dates", "PrecompileTools", "UUIDs"]
 git-tree-sha1 = "4b2e829ee66d4218e0cef22c0a64ee37cf258c29"
@@ -1551,7 +1657,7 @@ version = "0.42.2+0"
 [[deps.Pkg]]
 deps = ["Artifacts", "Dates", "Downloads", "FileWatching", "LibGit2", "Libdl", "Logging", "Markdown", "Printf", "REPL", "Random", "SHA", "Serialization", "TOML", "Tar", "UUIDs", "p7zip_jll"]
 uuid = "44cfe95a-1eb2-52ea-b672-e2afdf69b78f"
-version = "1.9.0"
+version = "1.9.2"
 
 [[deps.PkgVersion]]
 deps = ["Pkg"]
@@ -1687,11 +1793,6 @@ deps = ["UUIDs"]
 git-tree-sha1 = "838a3a4188e2ded87a4f9f184b4b0d78a1e91cb7"
 uuid = "ae029012-a4dd-5104-9daa-d747884805df"
 version = "1.3.0"
-
-[[deps.RoundingIntegers]]
-git-tree-sha1 = "99acd97f396ea71a5be06ba6de5c9defe188a778"
-uuid = "d5f540fe-1c90-5db3-b776-2e2f362d9394"
-version = "1.1.0"
 
 [[deps.SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
@@ -1982,23 +2083,11 @@ git-tree-sha1 = "4e490d5c960c314f33885790ed410ff3a94ce67e"
 uuid = "0c0b7dd1-d40b-584c-a123-a41640f87eec"
 version = "1.0.9+4"
 
-[[deps.Xorg_libXcomposite_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg", "Xorg_libXfixes_jll"]
-git-tree-sha1 = "7c688ca9c957837539bbe1c53629bb871025e423"
-uuid = "3c9796d7-64a0-5134-86ad-79f8eb684845"
-version = "0.4.5+4"
-
 [[deps.Xorg_libXcursor_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg", "Xorg_libXfixes_jll", "Xorg_libXrender_jll"]
 git-tree-sha1 = "12e0eb3bc634fa2080c1c37fccf56f7c22989afd"
 uuid = "935fb764-8cf2-53bf-bb30-45bb1f8bf724"
 version = "1.2.0+4"
-
-[[deps.Xorg_libXdamage_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg", "Xorg_libXfixes_jll"]
-git-tree-sha1 = "fe4ffb2024ba3eddc862c6e1d70e2b070cd1c2bf"
-uuid = "0aeada51-83db-5f97-b67e-184615cfc6f6"
-version = "1.1.5+4"
 
 [[deps.Xorg_libXdmcp_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -2041,12 +2130,6 @@ deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg", "Xorg_libX11_jll"]
 git-tree-sha1 = "19560f30fd49f4d4efbe7002a1037f8c43d43b96"
 uuid = "ea2f1a96-1ddc-540d-b46f-429655e07cfa"
 version = "0.9.10+4"
-
-[[deps.Xorg_libXtst_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg", "Xorg_libXext_jll", "Xorg_libXfixes_jll", "Xorg_libXi_jll"]
-git-tree-sha1 = "0c0a60851f44add2a64069ddf213e941c30ed93c"
-uuid = "b6f176f1-7aea-5357-ad67-1d3e565ea1c6"
-version = "1.2.3+4"
 
 [[deps.Xorg_libpthread_stubs_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -2125,47 +2208,11 @@ git-tree-sha1 = "49ce682769cd5de6c72dcf1b94ed7790cd08974c"
 uuid = "3161d3a3-bdf6-5164-811a-617609db77b4"
 version = "1.5.5+0"
 
-[[deps.adwaita_icon_theme_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg", "hicolor_icon_theme_jll"]
-git-tree-sha1 = "37c9a36ccb876e02876c8a654f1b2e8c1b443a78"
-uuid = "b437f822-2cd6-5e08-a15c-8bac984d38ee"
-version = "3.33.92+5"
-
-[[deps.at_spi2_atk_jll]]
-deps = ["ATK_jll", "Artifacts", "JLLWrappers", "Libdl", "Pkg", "XML2_jll", "Xorg_libX11_jll", "at_spi2_core_jll"]
-git-tree-sha1 = "f16ae690aca4761f33d2cb338ee9899e541f5eae"
-uuid = "de012916-1e3f-58c2-8f29-df3ef51d412d"
-version = "2.34.1+4"
-
-[[deps.at_spi2_core_jll]]
-deps = ["Artifacts", "Dbus_jll", "Glib_jll", "JLLWrappers", "Libdl", "Pkg", "Xorg_libXtst_jll"]
-git-tree-sha1 = "d2d540cd145f2b2933614649c029d222fe125188"
-uuid = "0fc3237b-ac94-5853-b45c-d43d59a06200"
-version = "2.34.0+4"
-
 [[deps.fzf_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "868e669ccb12ba16eaf50cb2957ee2ff61261c56"
 uuid = "214eeab7-80f7-51ab-84ad-2988db7cef09"
 version = "0.29.0+0"
-
-[[deps.gdk_pixbuf_jll]]
-deps = ["Artifacts", "Glib_jll", "JLLWrappers", "JpegTurbo_jll", "Libdl", "Libtiff_jll", "Pkg", "Xorg_libX11_jll", "libpng_jll"]
-git-tree-sha1 = "e9190f9fb03f9c3b15b9fb0c380b0d57a3c8ea39"
-uuid = "da03df04-f53b-5353-a52f-6a8b0620ced0"
-version = "2.42.8+0"
-
-[[deps.hicolor_icon_theme_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "b458a6f6fc2b1a8ca74ed63852e4eaf43fb9f5ea"
-uuid = "059c91fe-1bad-52ad-bddd-f7b78713c282"
-version = "0.17.0+3"
-
-[[deps.iso_codes_jll]]
-deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
-git-tree-sha1 = "51559b9071db7e363047a34f658d495843ccd35c"
-uuid = "bf975903-5238-5d20-8243-bc370bc1e7e5"
-version = "4.11.0+0"
 
 [[deps.libaom_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
@@ -2301,18 +2348,54 @@ version = "1.4.1+0"
 # ╠═d5369ebe-ac4a-4a70-9ebb-7ac189e85a55
 # ╠═d080f246-0c37-45d3-9ea4-b766d908c797
 # ╠═b1486e8d-0b5e-4d17-ac74-1f277596a660
+# ╠═794d4546-6b82-4d67-9ea8-265b520cfffe
+# ╠═295f3bf2-6353-4927-b418-45c989100c20
 # ╠═92e06b9d-2f6a-4dd2-a6c7-3ea1787655ea
 # ╠═18a82e0b-4f69-42f1-b784-96be541173f1
-# ╠═a90bfca7-2c3e-4c92-97ee-1cc18f2f9692
+# ╠═ec92354b-2cba-49a4-998a-7c6925733200
+# ╠═bd264ae6-4dd3-493e-bd5f-b42444b620dd
+# ╠═60c1ff88-fc06-4db4-a493-cbc44bf81e3e
 # ╠═61c6b13a-ff42-4eba-97d7-8820e4c59ac5
+# ╠═00540988-e8e7-41cf-92b1-1afc91ea9ac8
+# ╠═35d43276-2ddd-4bed-902c-8d8e705e766a
 # ╠═05391390-f6ed-4123-a4fe-3e529feaf544
+# ╠═2b51977e-9257-4c8c-86bf-541f0b3799cd
+# ╠═47fa52ab-ce09-4120-a5d6-214f91ae18e6
+# ╠═9accf8da-5b5a-4b08-b853-d0cec2259bcd
 # ╠═62dce63f-dcc4-46dc-9ce4-395da494497f
 # ╠═70a2a5a1-7070-4ab4-8426-fb9e7218c042
+# ╠═93cc7795-5919-451b-b1f8-7e6bc2c0a82c
 # ╠═923420d1-0b81-4b5a-b397-5d19bf8b4d22
-# ╠═9d13c4d6-fbc7-40fa-8478-64fdf090b90b
-# ╠═5e8305b3-9573-4d40-aa0a-52af633cbe69
+# ╠═31d5feec-df3e-4e97-b824-eab4cda3b93b
+# ╠═3c56caa8-89ff-4c8d-98d6-614dc1cb43ed
+# ╠═7f8dcada-f408-4c4e-923d-387de4eef636
+# ╠═ea32264a-2482-4909-8ed3-3a7f8b54cdda
+# ╠═7a070377-98ee-4656-92b7-85743a356871
+# ╠═256af6d2-8a16-4d18-8979-dd07f366415e
+# ╠═b1b71e0e-9dc5-40bf-befd-dc0bc5336db2
 # ╠═e73facc3-d24d-49fc-8536-94dbc5705bc7
 # ╠═366cfdfa-0611-4a3f-9eba-28b7adf04f30
 # ╠═281f7278-9525-4896-b91c-87451c6b4992
+# ╠═abac7af2-f619-4554-9184-489ffbbec3b4
+# ╠═bd48aea7-6d69-459c-94b1-98f02decfefd
+# ╠═a70ddcc8-64fb-4689-b9af-138e63fc32ba
+# ╠═6a84efc5-0a56-4148-85d9-43f215cc9c74
+# ╠═924b8bca-5bae-4d7e-bc28-a8becb8043c2
+# ╠═d585a1ab-1396-4daf-851d-269a380c03be
+# ╠═4bc485f1-5c58-4bb2-82ef-0c839935a59a
+# ╟─6e9b6bdd-bf91-473f-ab6d-c75ed2e82fa1
+# ╠═36378d47-1dd6-432f-8e4b-234ddf5b01eb
+# ╠═7cf7b10e-4496-42a5-919b-37c12b4e8eef
+# ╟─e8a6256e-b083-4f5c-b58b-5712f2f91b6d
+# ╠═2e5f40b6-92ea-4bd5-b7bc-5b9a2d67e483
+# ╟─e141037c-afae-41de-802f-d4aaadaada32
+# ╠═21038f44-2f99-4ea5-abf2-81f22f04ef54
+# ╟─31c0eb54-f3ad-46f2-be1d-c42e531a4a14
+# ╟─b7722ea3-c47d-4127-8cfc-840834be920d
+# ╠═7ddb673a-70a8-4a6b-9e6d-898faf0d1cf3
+# ╠═d219c3d5-6e68-434c-a2b6-e07111238e75
+# ╠═d4a6f36e-fb7a-491e-bbe1-7667d38da5b0
+# ╠═e540c671-7361-40e4-83e3-c5bbc3f175bb
+# ╠═6c836fa2-40ed-419e-8b57-52c9cdc85f79
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
