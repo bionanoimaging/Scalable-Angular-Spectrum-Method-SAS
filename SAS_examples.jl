@@ -56,6 +56,42 @@ function find_width_window(ineq_1D::AbstractVector, bandlimit_border)
 	return ineq_v_b, ineq_v_e
 end
 
+# ╔═╡ 37b1e328-8c6f-4099-ab1f-89f1f09975c8
+""" function resample_int_to(arr, ref; damp_range=0.03)
+
+computes intensity from the input amplitudes and resamples them to a common grid and extracts a common region in both.
+"""
+function resample_int_to(arr, ref; damp_range=0.03)
+	int_arr = damp_edge_outside(abs2.(arr[1]),(damp_range, damp_range));
+	nz = round.(Int, size(int_arr) .* arr[2].sampling ./ ref[2].sampling);
+	arr = fftshift(resample(ifftshift(int_arr), nz)) * prod(size(int_arr)) / prod(nz);
+	sz = min.(size(ref[1]), nz);
+	arr = select_region(arr, new_size=sz)
+	ref = select_region(abs2.(ref[1]), new_size=sz)
+	return arr, ref
+end
+
+# ╔═╡ 1f0cdb0e-440a-4bbc-861c-1fd8293fb8c3
+""" intensity_difference(arr, ref; damp_range=0.03)
+
+subtracts the intensities derived from two amplitudes with potentially different sampling and sizes. 
+"""
+function intensity_difference(arr, ref; damp_range=0.03)
+	arr_int, ref_int = resample_int_to(arr, ref; damp_range=damp_range)
+	return arr_int .- ref_int
+end
+
+# ╔═╡ 5e0cdbd0-41a7-4cdc-9c91-06efe20a4769
+"""  function compare(arr, ref; damp_range=0.03)
+
+the comparison is based on resampling `arr` and cutting both arrays to smaller of both sizes.
+
+"""
+function compare(arr, ref; damp_range=0.03)
+	arr_int, ref_int = resample_int_to(arr, ref; damp_range=damp_range)
+	return sum(abs2.(arr_int .- ref_int)) / sum(abs2.(ref_int))
+end
+
 # ╔═╡ 45e9dad4-8f26-45c6-b58e-93d634881f60
 md"# Angular Spectrum of Plane Waves"
 
@@ -172,7 +208,7 @@ function angular_spectrum(field::Matrix{T}, z, λ, L; pad_factor = 2, apply_band
 	field_out_cropped = select_region(field_out, new_size=size(field))
 	
 	# return final field and some other variables
-	return field_out_cropped, (; )
+	return field_out_cropped, (; L=L, sampling=L/size(field,1))
 end
 
 # ╔═╡ 2177f522-9ccb-4b96-8bd5-92718f0d5cc6
@@ -184,7 +220,7 @@ Returns the the electrical field with physical length `L` and wavelength `λ` pr
 
 """
 	function fresnel(field::Matrix{T}, z, λ, L; skip_final_phase=true) where T
-	@assert size(field, 1) == size(field, 2) "Restricted to auadratic fields."
+	@assert size(field, 1) == size(field, 2) "Restricted to quadratic fields."
 	# we need to apply padding to prevent circular convolution
 	pad_factor = 1
 	L_new = pad_factor .* L
@@ -195,7 +231,6 @@ Returns the the electrical field with physical length `L` and wavelength `λ` pr
 	
 	# helpful propagation variables
 	(; k, f_x, f_y, x, y) = _propagation_variables(field_new, z, λ, L_new)
-	
 	
 	N = size(field_new, 1)
 	# new sample coordinates
@@ -223,7 +258,7 @@ Returns the the electrical field with physical length `L` and wavelength `λ` pr
 	field_out .*= 1 / (1im * T(sqrt(length(field_out)))) 
 	
 	# transfer function kernel of angular spectrum
-	return field_out, (; L=Q)
+	return field_out, (; L=Q, sampling=Q/size(field_out,1))
 end
 
 # ╔═╡ 4db3a990-4e5d-4fe7-89cc-4823d1b5b592
@@ -318,7 +353,7 @@ function scalable_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 	# unpad/crop/extract center
 	ψ_final = select_region(ψ_p_final, new_size=size(ψ₀))
 	
-	return ψ_final, (;Q, L=L * M, W)
+	return ψ_final, (;Q, L=L * M, W, sampling=(L*M)/size(ψ_final,1))
 end
 
 # ╔═╡ 6fa374ce-6953-443a-94a0-9859237fe345
@@ -342,22 +377,64 @@ z_circ
 simshow(U_circ)
 
 # ╔═╡ 77f6528c-cf26-465e-a5bd-7bd336e1b4bc
-@time as_circ = angular_spectrum(select_region(U_circ, new_size=round.(Int, size(U_circ) .* M)), z_circ, λ, L * M)
+@time as_circ = angular_spectrum(select_region(U_circ, new_size=round.(Int, size(U_circ) .* M)), pad_factor=4, z_circ, λ, L * M)
+
+# ╔═╡ 16a40756-2b97-4965-8627-831ecc6de4c8
+@time sft_fr_circ = fresnel(select_region(U_circ, M=2), z_circ, λ, 2 * L, skip_final_phase=true)
 
 # ╔═╡ dd434bfd-c14d-4417-922a-01a573c44143
-@time sft_fr_circ = select_region(fresnel(select_region(U_circ, M=2), z_circ, λ, 2 * L, skip_final_phase=true)[1], M=0.5);
+@time sft_fr_circ_cut = select_region(sft_fr_circ[1], M=0.5);
+
+# ╔═╡ 5196a182-4a90-48e6-9a0d-f6b27e9859b3
+as_circ[2].L * 1e3
+
+# ╔═╡ f2be0dce-c586-4cd3-b91d-b26511fad01a
+sft_fr_circ[2].L * 1e3
 
 # ╔═╡ 6af0bc99-4245-44f8-bc45-405f9e56b513
-@time sas_circ = scalable_angular_spectrum(U_circ, z_circ, λ, L, bandlimit_border=(0.9, 1));
+@time sas_circ = scalable_angular_spectrum(U_circ, z_circ, λ, L, bandlimit_border=(0.98, 1), apply_bandlimit=true);
+
+# ╔═╡ 3afb5c51-889f-43e4-9ef8-94bf63a31b6f
+@time sas_circ_nb = scalable_angular_spectrum(U_circ, z_circ, λ, L, apply_bandlimit=false);
 
 # ╔═╡ 3524374c-97f0-4cdd-88cd-7ffbdb52834c
 simshow(abs2.(as_circ[1]), γ=0.13, cmap=:inferno)
 
 # ╔═╡ b95302c7-0385-46ac-8f53-2e6cf7cecea9
-simshow(abs2.(sft_fr_circ), γ=0.13, cmap=:inferno)
+simshow(abs2.(sft_fr_circ_cut), γ=0.13, cmap=:inferno)
+
+# ╔═╡ b4760cdb-331f-44ac-abf0-f7b8d131fb1e
+compare(sft_fr_circ, as_circ)*100 # quantitative error in percent
 
 # ╔═╡ c4f2b545-cd1d-4ae2-bccb-7a89119ae7df
 simshow(abs2.(sas_circ[1]), γ=0.13, cmap=:inferno)
+
+# ╔═╡ c69655dd-3380-4880-9eef-2bbc91c6933c
+simshow(damp_edge_outside(abs2.(sas_circ[1]),(0.03,0.03)), γ=0.13, cmap=:inferno)
+
+# ╔═╡ 5766673b-f1e6-4eeb-acca-4b92b87a9553
+compare(sas_circ, as_circ, damp_range=0.03)*100 # quantitative comparison
+
+# ╔═╡ cd982add-2a87-4f0b-9701-4c1f5109168e
+compare(sas_circ_nb, as_circ, damp_range=0.03)*100 # quantitative comparison
+
+# ╔═╡ 497d07d1-0e04-4068-890a-076cfa8e7975
+simshow(intensity_difference(as_circ, sas_circ_nb).+0.5,)
+
+# ╔═╡ d4f91a44-8ad3-4086-aa0d-a7e13abc2f26
+simshow(ft(intensity_difference(as_circ, sas_circ)))
+
+# ╔═╡ 0fa8e819-bbf1-4da7-bf05-5a1ca4980193
+findmax(intensity_difference(sas_circ, as_circ))
+
+# ╔═╡ d2836dff-80a0-4db3-a748-8555bbaed55e
+mysas, myas = resample_int_to(as_circ, sas_circ)
+
+# ╔═╡ b29d94eb-6f10-43cf-8d92-5f0768b13a81
+simshow(intensity_difference(sas_circ, as_circ)) 
+
+# ╔═╡ f5132b6a-02b3-4de1-9696-c65417ef6c38
+compare(sas_circ, sas_circ)
 
 # ╔═╡ d623e68d-8cfd-4df8-af30-396097ddc6aa
 L_box = 128e-6;
@@ -411,6 +488,9 @@ simshow(abs2.(sft_fr_box), γ=0.13, cmap=:inferno)
 # ╔═╡ 9c46ad96-96ac-4d40-bfec-d146451f1130
 simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
 
+# ╔═╡ 4f9aab5a-8c2b-4424-97be-4d4b0ba07b3b
+compare(sas_circ, as_box)*100
+
 # ╔═╡ 2f79966d-86a5-4066-a84e-a128c93247e8
 md"# Third Example: Hologram
 
@@ -440,7 +520,7 @@ yh = fftpos(Lh, Nh, NDTools.CenterFT);
 sigma = (100e-6/2)/sqrt(2)/Δxh; # sigma for the 100µm (2w0) width of the Gaussian
 
 # ╔═╡ 7330bc0f-d4f5-47a3-b8da-4df91e04f987
-illuh = gaussian((Nh,Nh), sigma=sigma);
+illuh = gaussian((Nh,Nh), sigma=sigma/1.5);
 
 # ╔═╡ 047b310a-01f7-45c3-af35-1a5fb1b1a2ad
 z_h = 10e-3; # 1cm propagation distance
@@ -524,8 +604,14 @@ end
 # ╔═╡ bd264ae6-4dd3-493e-bd5f-b42444b620dd
 holo = IFTA_hologram(illuh, λh, yh, maxkrel_h, 150);
 
-# ╔═╡ 60c1ff88-fc06-4db4-a493-cbc44bf81e3e
+# ╔═╡ af9c6f62-706b-46df-a68a-8cd4e552e7c4
 U_h = illuh .* holo;
+
+# ╔═╡ 93bc283a-9b12-4aac-b725-f5a22507af73
+# U_h = exp.(1im.*2pi.*rand(size(holo)...));
+
+# ╔═╡ bd2457e6-6fca-41cc-b67c-7358912348d7
+simshow(illuh)
 
 # ╔═╡ 61c6b13a-ff42-4eba-97d7-8820e4c59ac5
 simshow(U_h, γ=1)
@@ -537,13 +623,13 @@ simshow(abs2.(ft(U_h)), γ=1)
 local_normalization(ft(U_h),  maxkrel_h *Δxh/λh);
 
 # ╔═╡ 05391390-f6ed-4123-a4fe-3e529feaf544
-@time sas_h = scalable_angular_spectrum(U_h, z_h, λh, Lh, bandlimit_border=(0.9, 1));
+@time sas_h = scalable_angular_spectrum(U_h, z_h, λh, Lh, bandlimit_border=(0.95, 1));
 
 # ╔═╡ 2b51977e-9257-4c8c-86bf-541f0b3799cd
 int_sas = abs2.(sas_h[1]);
 
 # ╔═╡ 47fa52ab-ce09-4120-a5d6-214f91ae18e6
-@time sas_hnb = scalable_angular_spectrum(U_h, z_h, λh, Lh, bandlimit_border=(0.9, 1), apply_bandlimit=false);
+@time sas_hnb = scalable_angular_spectrum(U_h, z_h, λh, Lh, apply_bandlimit=false);
 
 # ╔═╡ 9accf8da-5b5a-4b08-b853-d0cec2259bcd
 int_sas_nb = abs2.(sas_hnb[1]);
@@ -578,6 +664,12 @@ int_hb2 = abs2.(as_hb2[1]);
 # ╔═╡ 256af6d2-8a16-4d18-8979-dd07f366415e
 @time as_hh = angular_spectrum(select_region(U_h, new_size=round.(Int, size(U_h) .* M_h)), z_h, λh, Lh * M_h, pad_factor=7);
 
+# ╔═╡ 199d9441-2e64-4ff6-84ac-9f06ca69dc9c
+@time fr_h = fresnel(U_h, z_h, λh, Lh, skip_final_phase=true)
+
+# ╔═╡ 6f540081-52e5-4ae1-8c56-719b45bd07e0
+fr_h[2].L*1e3
+
 # ╔═╡ b1b71e0e-9dc5-40bf-befd-dc0bc5336db2
 int_hh = abs2.(as_hh[1]);
 
@@ -587,41 +679,14 @@ simshow(int_sas, γ=1, cmap=:gray)
 # ╔═╡ 366cfdfa-0611-4a3f-9eba-28b7adf04f30
 L_dest = sas_h[2].L*1e3 # field width in mm in the destination plane
 
+# ╔═╡ 881b95cc-1da9-4d61-a594-55b320b14994
+L_dest_Fr = fr_h[2].L * 1e3
+
 # ╔═╡ 281f7278-9525-4896-b91c-87451c6b4992
 simshow(int_hb, γ=1, cmap=:gray)
 
 # ╔═╡ abac7af2-f619-4554-9184-489ffbbec3b4
 L_dest_as = Lh * M_h*1e3 # field width in mm in the destination plane
-
-# ╔═╡ bd48aea7-6d69-459c-94b1-98f02decfefd
-size(int_hb)
-
-# ╔═╡ a70ddcc8-64fb-4689-b9af-138e63fc32ba
-# ╠═╡ disabled = true
-#=╠═╡
-new_size1 = round(Int, L_dest/(L_dest_as / size(int_hb,1))
-  ╠═╡ =#
-
-# ╔═╡ 6fdc81a8-7332-4dc8-af71-174a71980d2e
-new_size = round(Int, (L_dest_as)/(L_dest/size(int_sas,1)))
-
-# ╔═╡ 6a84efc5-0a56-4148-85d9-43f215cc9c74
-int_sas_rs = fftshift(resample(ifftshift(int_sas), (new_size, new_size))/(new_size*new_size)*prod(size(int_sas)));
-
-# ╔═╡ e87e7ac2-9a26-45b9-9d81-568d844963b7
-int_hb_rs = fftshift(resample(ifftshift(int_hb), (new_size, new_size))/(new_size*new_size)*prod(size(int_hb)));
-
-# ╔═╡ 924b8bca-5bae-4d7e-bc28-a8becb8043c2
-int_sasnb_rs = fftshift(resample(ifftshift(int_sas_nb), (new_size, new_size))/(new_size*new_size)*prod(size(int_sas)));
-
-# ╔═╡ db30508a-167b-4bab-80c6-bdbb663672b2
-int_hh_rs = fftshift(resample(ifftshift(int_hh), (new_size, new_size))/(new_size*new_size)*prod(size(int_hh)));
-
-# ╔═╡ d585a1ab-1396-4daf-851d-269a380c03be
-sum(int_sas_rs)
-
-# ╔═╡ 4bc485f1-5c58-4bb2-82ef-0c839935a59a
-sum(int_hb)
 
 # ╔═╡ 6e9b6bdd-bf91-473f-ab6d-c75ed2e82fa1
 md"# Comparison of Quality metrics
@@ -630,53 +695,68 @@ with the norm according to Asoubar et al.
 No padding with AS propagation yields:
 "
 
-# ╔═╡ 36378d47-1dd6-432f-8e4b-234ddf5b01eb
-""" the comparison is based on cutting both arrays to the given size
-"""
-function compare(arr1, ref, sz)
-	arr1 = select_region(arr1, new_size=sz)
-	ref = select_region(ref, new_size=sz)
-	return sum(abs2.(arr1 .- ref)) / sum(abs2.(ref))
-end
-
-# ╔═╡ 4f9aab5a-8c2b-4424-97be-4d4b0ba07b3b
-compare(abs2.(sas_circ[1]), abs2.(as_box[1]), size(abs2.(as_box[1])))
-
-# ╔═╡ 10b8ecba-b10f-4d0f-8809-227eca950a6e
-
-
 # ╔═╡ 7cf7b10e-4496-42a5-919b-37c12b4e8eef
-compare(int_h, int_hh, (new_size, new_size))*100 # AS 5.7 x padding, no suppression
+compare(as_h, as_hh)*100 # AS 5.7 x padding, no suppression
 
 # ╔═╡ e8a6256e-b083-4f5c-b58b-5712f2f91b6d
 md"Matsushima suppression (no padding):"
 
 # ╔═╡ 2e5f40b6-92ea-4bd5-b7bc-5b9a2d67e483
-compare(int_hb, int_hh, (new_size, new_size))*100 # AS 5.7 padding matsushima
+compare(as_hb, as_hh)*100 # AS 5.7 padding matsushima
 
 # ╔═╡ c15c53c5-8cb6-41e9-a6cd-08ab08fa07a7
-compare(int_hh_rs, int_hb_rs, (new_size, new_size))*100
+compare(as_hh, as_hb)*100 # just to compare the other way round
 
 # ╔═╡ e141037c-afae-41de-802f-d4aaadaada32
 md"Matsushima suppression (2x padding):"
 
 # ╔═╡ 21038f44-2f99-4ea5-abf2-81f22f04ef54
-compare(int_hb2, int_hh, (new_size, new_size))*100 # AS 2x 5.7 padding, matsushima
+compare(as_hb2, as_hh)*100 # AS 2x 5.7 padding, matsushima
 
 # ╔═╡ 31c0eb54-f3ad-46f2-be1d-c42e531a4a14
 md"Fresnel propagation (no padding):"
 
+# ╔═╡ f7e2ddff-4561-430d-8fa9-9b2b4384dc57
+compare(fr_h, as_hh)*100 # In the paper they claim 70% difference.
+
+# ╔═╡ e449bf56-3d69-4c8e-867d-54fff56755bc
+size(fr_h[1],1) # to double-check whether the size is OK
+
+# ╔═╡ b89b8461-f97d-42e2-bee1-44b8979b8198
+z_h # propagation distance of 1cm, to double-check
+
+# ╔═╡ ea70c9cf-f212-4176-a0aa-6c88b9a2ee9e
+as_hh[2].L*1e3 # fieldsize in mm
+
+# ╔═╡ 61d11c3b-0a2c-44b2-982a-4bd9cd03334c
+as_hh[2].sampling
+
+# ╔═╡ 5fe99558-6a4a-49a2-9d92-8ad78da3306d
+simshow(abs2.(fr_h[1]))
+
 # ╔═╡ b7722ea3-c47d-4127-8cfc-840834be920d
 md"SAS propagation (2x padding):"
 
+# ╔═╡ 1af6d28f-9c45-4de9-938f-92aec936d6ea
+myh, myhh = resample_int_to(sas_h, as_hh);
+
+# ╔═╡ e393118f-b9ff-4ffc-80e3-4c247f262d28
+maximum(myh)
+
 # ╔═╡ d219c3d5-6e68-434c-a2b6-e07111238e75
-compare(int_sas_rs, int_hh, (new_size, new_size))*100 # SAS, 2x padding (924x924), resampled
+compare(sas_h, as_hh, damp_range=0.1)*100 # SAS, 2x padding (924x924), resampled
 
 # ╔═╡ e540c671-7361-40e4-83e3-c5bbc3f175bb
-compare(int_sasnb_rs, int_hh, (new_size, new_size))*100 # SAS, 2x padding (924x924), resampled
+compare(sas_hnb, as_hh, damp_range=0.1)*100 # SAS, 2x padding (924x924), resampled
+
+# ╔═╡ 20a00ae2-fa54-4f56-ad1b-2c204fc85d2b
+compare(as_hh, sas_hnb, damp_range=0.2)*100 # SAS, 2x padding (924x924), resampled
 
 # ╔═╡ 397c1577-4b79-43a9-8302-2818fbbbff83
-toshow = int_sasnb_rs .- select_region(int_hh, new_size=(new_size, new_size))
+toshow = intensity_difference(sas_hnb, as_hh; damp_range=0.2);
+
+# ╔═╡ 8e5166da-961b-404d-bff4-b0db703ff5a4
+maximum(toshow)
 
 # ╔═╡ 774dcce4-deb8-44f3-a9e6-d3ab7346c48d
 simshow(toshow .- minimum(toshow), γ=1, cmap=:gray, set_zero=false)
@@ -2315,6 +2395,9 @@ version = "1.4.1+0"
 # ╠═b87f5371-13b0-4c73-91fb-8108a5a80a3e
 # ╠═e53711d2-68ed-4712-82ba-c11bc14ffab3
 # ╠═529a3df1-8a18-416e-9730-14eb10302fbb
+# ╠═37b1e328-8c6f-4099-ab1f-89f1f09975c8
+# ╠═1f0cdb0e-440a-4bbc-861c-1fd8293fb8c3
+# ╠═5e0cdbd0-41a7-4cdc-9c91-06efe20a4769
 # ╠═e05c6882-81f9-4784-ab7e-7a9a8d296b6d
 # ╟─45e9dad4-8f26-45c6-b58e-93d634881f60
 # ╠═adfcc771-e092-4dd3-8ff9-9a940c1c29a3
@@ -2337,11 +2420,25 @@ version = "1.4.1+0"
 # ╠═764349e1-3b12-412b-bcdd-ba1bb64bc391
 # ╠═0cd5c3e8-39ca-40be-8fef-17faf7738b45
 # ╠═77f6528c-cf26-465e-a5bd-7bd336e1b4bc
+# ╠═16a40756-2b97-4965-8627-831ecc6de4c8
 # ╠═dd434bfd-c14d-4417-922a-01a573c44143
+# ╠═5196a182-4a90-48e6-9a0d-f6b27e9859b3
+# ╠═f2be0dce-c586-4cd3-b91d-b26511fad01a
 # ╠═6af0bc99-4245-44f8-bc45-405f9e56b513
+# ╠═3afb5c51-889f-43e4-9ef8-94bf63a31b6f
 # ╠═3524374c-97f0-4cdd-88cd-7ffbdb52834c
 # ╠═b95302c7-0385-46ac-8f53-2e6cf7cecea9
+# ╠═b4760cdb-331f-44ac-abf0-f7b8d131fb1e
 # ╠═c4f2b545-cd1d-4ae2-bccb-7a89119ae7df
+# ╠═c69655dd-3380-4880-9eef-2bbc91c6933c
+# ╠═5766673b-f1e6-4eeb-acca-4b92b87a9553
+# ╠═cd982add-2a87-4f0b-9701-4c1f5109168e
+# ╠═497d07d1-0e04-4068-890a-076cfa8e7975
+# ╠═d4f91a44-8ad3-4086-aa0d-a7e13abc2f26
+# ╠═0fa8e819-bbf1-4da7-bf05-5a1ca4980193
+# ╠═d2836dff-80a0-4db3-a748-8555bbaed55e
+# ╠═b29d94eb-6f10-43cf-8d92-5f0768b13a81
+# ╠═f5132b6a-02b3-4de1-9696-c65417ef6c38
 # ╟─1815437a-332c-4bc1-9b72-b75cd4b8b653
 # ╠═d623e68d-8cfd-4df8-af30-396097ddc6aa
 # ╠═81c307a0-82d4-4514-8d28-12e12defcea2
@@ -2376,7 +2473,9 @@ version = "1.4.1+0"
 # ╠═18a82e0b-4f69-42f1-b784-96be541173f1
 # ╠═ec92354b-2cba-49a4-998a-7c6925733200
 # ╠═bd264ae6-4dd3-493e-bd5f-b42444b620dd
-# ╠═60c1ff88-fc06-4db4-a493-cbc44bf81e3e
+# ╠═af9c6f62-706b-46df-a68a-8cd4e552e7c4
+# ╠═93bc283a-9b12-4aac-b725-f5a22507af73
+# ╠═bd2457e6-6fca-41cc-b67c-7358912348d7
 # ╠═61c6b13a-ff42-4eba-97d7-8820e4c59ac5
 # ╠═00540988-e8e7-41cf-92b1-1afc91ea9ac8
 # ╠═35d43276-2ddd-4bed-902c-8d8e705e766a
@@ -2394,23 +2493,15 @@ version = "1.4.1+0"
 # ╠═ea32264a-2482-4909-8ed3-3a7f8b54cdda
 # ╠═7a070377-98ee-4656-92b7-85743a356871
 # ╠═256af6d2-8a16-4d18-8979-dd07f366415e
+# ╠═199d9441-2e64-4ff6-84ac-9f06ca69dc9c
+# ╠═6f540081-52e5-4ae1-8c56-719b45bd07e0
 # ╠═b1b71e0e-9dc5-40bf-befd-dc0bc5336db2
 # ╠═e73facc3-d24d-49fc-8536-94dbc5705bc7
 # ╠═366cfdfa-0611-4a3f-9eba-28b7adf04f30
+# ╠═881b95cc-1da9-4d61-a594-55b320b14994
 # ╠═281f7278-9525-4896-b91c-87451c6b4992
 # ╠═abac7af2-f619-4554-9184-489ffbbec3b4
-# ╠═bd48aea7-6d69-459c-94b1-98f02decfefd
-# ╠═a70ddcc8-64fb-4689-b9af-138e63fc32ba
-# ╠═6fdc81a8-7332-4dc8-af71-174a71980d2e
-# ╠═6a84efc5-0a56-4148-85d9-43f215cc9c74
-# ╠═e87e7ac2-9a26-45b9-9d81-568d844963b7
-# ╠═924b8bca-5bae-4d7e-bc28-a8becb8043c2
-# ╠═db30508a-167b-4bab-80c6-bdbb663672b2
-# ╠═d585a1ab-1396-4daf-851d-269a380c03be
-# ╠═4bc485f1-5c58-4bb2-82ef-0c839935a59a
 # ╟─6e9b6bdd-bf91-473f-ab6d-c75ed2e82fa1
-# ╠═36378d47-1dd6-432f-8e4b-234ddf5b01eb
-# ╠═10b8ecba-b10f-4d0f-8809-227eca950a6e
 # ╠═7cf7b10e-4496-42a5-919b-37c12b4e8eef
 # ╟─e8a6256e-b083-4f5c-b58b-5712f2f91b6d
 # ╠═2e5f40b6-92ea-4bd5-b7bc-5b9a2d67e483
@@ -2418,10 +2509,20 @@ version = "1.4.1+0"
 # ╟─e141037c-afae-41de-802f-d4aaadaada32
 # ╠═21038f44-2f99-4ea5-abf2-81f22f04ef54
 # ╟─31c0eb54-f3ad-46f2-be1d-c42e531a4a14
+# ╠═f7e2ddff-4561-430d-8fa9-9b2b4384dc57
+# ╠═e449bf56-3d69-4c8e-867d-54fff56755bc
+# ╠═b89b8461-f97d-42e2-bee1-44b8979b8198
+# ╠═ea70c9cf-f212-4176-a0aa-6c88b9a2ee9e
+# ╠═61d11c3b-0a2c-44b2-982a-4bd9cd03334c
+# ╠═5fe99558-6a4a-49a2-9d92-8ad78da3306d
 # ╟─b7722ea3-c47d-4127-8cfc-840834be920d
+# ╠═1af6d28f-9c45-4de9-938f-92aec936d6ea
+# ╠═e393118f-b9ff-4ffc-80e3-4c247f262d28
 # ╠═d219c3d5-6e68-434c-a2b6-e07111238e75
 # ╠═e540c671-7361-40e4-83e3-c5bbc3f175bb
+# ╠═20a00ae2-fa54-4f56-ad1b-2c204fc85d2b
 # ╠═397c1577-4b79-43a9-8302-2818fbbbff83
+# ╠═8e5166da-961b-404d-bff4-b0db703ff5a4
 # ╠═774dcce4-deb8-44f3-a9e6-d3ab7346c48d
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
