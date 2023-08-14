@@ -56,28 +56,50 @@ function find_width_window(ineq_1D::AbstractVector, bandlimit_border)
 	return ineq_v_b, ineq_v_e
 end
 
+# ╔═╡ 5d639e0e-bc45-472b-8cb6-b78678671047
+function damp_edge_outside_cpx(arr, damp_range)
+	return complex.(damp_edge_outside(real.(arr), damp_range), damp_edge_outside(imag.(arr), damp_range))
+end
+
+# ╔═╡ a5478663-3afd-4545-b666-b20ee196bd84
+function upsample2_cpx(arr, damp_range=0.1)
+		arr_amp = damp_edge_outside_cpx(arr,(damp_range, damp_range));
+		return select_region(upsample2(arr_amp), new_size=size(arr).*2);
+end
+
 # ╔═╡ 37b1e328-8c6f-4099-ab1f-89f1f09975c8
 """ function resample_int_to(arr, ref; damp_range=0.03)
 
 computes intensity from the input amplitudes and resamples them to a common grid and extracts a common region in both.
 """
-function resample_int_to(arr, ref; damp_range=0.03)
-	int_arr = damp_edge_outside(abs2.(arr[1]),(damp_range, damp_range));
-	nz = round.(Int, size(int_arr) .* arr[2].sampling ./ ref[2].sampling);
+function resample_int_to(arr, ref; damp_range=0.1, do_upsample2=false)
+	if (do_upsample2) # to warrant correct sampling of the intensity.
+		myarr = upsample2_cpx(arr[1], damp_range);
+		myarr_sampling = arr[2].sampling./2.0;
+		myref = upsample2_cpx(ref[1], damp_range);
+		myref_sampling = ref[2].sampling./2.0;
+	else
+		myarr = arr[1];
+		myarr_sampling = arr[2].sampling;
+		myref = ref[1];
+		myref_sampling = ref[2].sampling;
+	end
+	int_arr = damp_edge_outside(abs2.(myarr),(damp_range, damp_range));
+	nz = round.(Int, size(int_arr) .* myarr_sampling ./ myref_sampling);
 	arr = fftshift(resample(ifftshift(int_arr), nz)) * prod(size(int_arr)) / prod(nz);
-	sz = min.(size(ref[1]), nz);
+	sz = min.(size(myref), nz);
 	arr = select_region(arr, new_size=sz)
-	ref = select_region(abs2.(ref[1]), new_size=sz)
+	ref = select_region(abs2.(myref), new_size=sz)
 	return arr, ref
 end
 
 # ╔═╡ 1f0cdb0e-440a-4bbc-861c-1fd8293fb8c3
-""" intensity_difference(arr, ref; damp_range=0.03)
+""" intensity_difference(arr, ref; damp_range=0.1)
 
 subtracts the intensities derived from two amplitudes with potentially different sampling and sizes. 
 """
-function intensity_difference(arr, ref; damp_range=0.03)
-	arr_int, ref_int = resample_int_to(arr, ref; damp_range=damp_range)
+function intensity_difference(arr, ref; damp_range=0.03, do_upsample2=false)
+	arr_int, ref_int = resample_int_to(arr, ref; damp_range=damp_range, do_upsample2=do_upsample2)
 	return arr_int .- ref_int
 end
 
@@ -87,8 +109,8 @@ end
 the comparison is based on resampling `arr` and cutting both arrays to smaller of both sizes.
 
 """
-function compare(arr, ref; damp_range=0.03)
-	arr_int, ref_int = resample_int_to(arr, ref; damp_range=damp_range)
+function compare(arr, ref; damp_range=0.03, do_upsample2=false)
+	arr_int, ref_int = resample_int_to(arr, ref; damp_range=damp_range, do_upsample2=do_upsample2)
 	return sum(abs2.(arr_int .- ref_int)) / sum(abs2.(ref_int))
 end
 
@@ -126,7 +148,7 @@ D_circ = N / 8
 U_circ = ComplexF64.(rr((N, N)) .< D_circ / 2) .* exp.(1im .* 2π ./ λ .* y .* sind(45)) .+ ComplexF64.(rr((N, N)) .< D_circ / 2) .* exp.(1im .* 2π ./ λ .* y' .* sind(-45));
 
 # ╔═╡ 694b3ac0-51e2-46b4-a5ce-8b1a93d6a368
-M = 4
+M = 0.5 # M=4
 
 # ╔═╡ e05c6882-81f9-4784-ab7e-7a9a8d296b6d
 """
@@ -170,21 +192,48 @@ end
 Returns the the electrical field with physical length `L` and wavelength `λ` propagated with the angular spectrum method of plane waves (AS) by the propagation distance `z`.
 `pad_factor` allows to defined how much zero-padding relative to the field to propagate is used.
 `apply_bandlimt` defines whether high-angle rays (undersampled phases in Fourier space) are suppressed
+`use_czt_zoom` applies a zoom into the region, such that the band_limit is placed at the XY-border. This changes the pixelsize
 """
-function angular_spectrum(field::Matrix{T}, z, λ, L; pad_factor = 2, apply_bandlimit = true) where T
-	@assert size(field, 1) == size(field, 2) "Restricted to auadratic fields."
+function angular_spectrum(field::Matrix{T}, z, λ, L; pad_factor = 2, apply_bandlimit = true, use_czt_zoom = false) where T
+	@assert size(field, 1) == size(field, 2) "Restricted to quadratic fields."
 	# we need to apply padding to prevent circular convolution
 	L_new = pad_factor .* L
 	
 	# applies zero padding
 	field_new = select_region(field, new_size=size(field) .* pad_factor)
 	
+	ft_field = 0;
+	if (use_czt_zoom)
+		# zoom: Fourier space zoom factor 
+		# Δu =   zoom / L_new # Fourier pixel size in reciprocal meters
+		# limit in Fourier-space frequencies, reciprocal meters:
+		# sz = size(field_new,1)
+		# Δu*sz != u_limit = 1 / (sqrt((2 * Δu * z)^2 + 1) * λ) 
+		# λ^2 (Δu*sz)^2 ((2 Δu z)^2 +1) = 1
+		#  (Δu)^2 ((2 Δu)^2 +1/z^2) = 1/(λ^2 sz^2 z^2)
+		# (Δu)^2
+		# zoom = L_new / ()
+		# according to Yz et al. (2012), the with the samples in Freq Domain M
+		# and real size S = L_new/zoom:
+		# S = 2sqrt(2)zMλ / sqrt(-M^2 λ^2 + sqrt(M^4λ^4 + 64 z^2M^2λ^2))
+		# zoom = L_new sqrt(-M^2 λ^2 + sqrt(M^4λ^4 + 64 z^2M^2λ^2)) / (2sqrt(2)zMλ)
+		M = size(field_new, 1)
+		zoom = L_new * sqrt(-M^2*λ^2 + sqrt(M^4*λ^4 + 64*z^2*M^2*λ^2)) / (2*sqrt(2)*z*M*λ)
+		println("czt zoom factor: $(zoom)")
+		field_new .*= zoom
+		ft_field = ifftshift(czt(field_new, (1/zoom, 1/zoom))) #
+		L /= zoom;
+		L_new /= zoom;
+	else
+		ft_field = fft(ifftshift(field_new))
+	end
+	
 	# helpful propagation variables
 	(; k, f_x, f_y) = _propagation_variables(field_new, z, λ, L_new)
 	
 	# transfer function kernel of angular spectrum
 	H = exp.(1im .* k .* z .* sqrt.(0im .+ 1 .- abs2.(f_x .* λ) .- abs2.(f_y .* λ)))
-
+	
 	if (apply_bandlimit)
 		# bandlimit according to Matsushima
 		# as addition we introduce a smooth bandlimit with a Hann window
@@ -203,7 +252,7 @@ function angular_spectrum(field::Matrix{T}, z, λ, L; pad_factor = 2, apply_band
 	end
 	println("pixels to propagate: $(size(H,1))x$(size(H,2)).")
 	# propagate field
-	field_out = fftshift(ifft(fft(ifftshift(field_new)) .* H ))
+	field_out = fftshift(ifft(ft_field .* H ))
 	# take center part because of circular convolution
 	field_out_cropped = select_region(field_out, new_size=size(field))
 	
@@ -379,8 +428,32 @@ simshow(U_circ)
 # ╔═╡ 77f6528c-cf26-465e-a5bd-7bd336e1b4bc
 @time as_circ = angular_spectrum(select_region(U_circ, new_size=round.(Int, size(U_circ) .* M)), pad_factor=4, z_circ, λ, L * M)
 
+# ╔═╡ 3c7bb832-d0db-4f39-913f-6f36d931f0bc
+@time as_czt_circ = angular_spectrum(select_region(U_circ, new_size=round.(Int, size(U_circ) .* M)), pad_factor=2, z_circ, λ, M*L, apply_bandlimit=true, use_czt_zoom=true);
+
+# ╔═╡ 1e6e8a5a-b757-44a5-9b23-70eb711da252
+compare(as_czt_circ, as_circ, damp_range=0.1, do_upsample2=false)*100 # quantitative comparison
+
+# ╔═╡ 186ce137-3181-4faa-9f24-a1defcc68954
+#simshow(ft(as_czt_circ[1]), γ=.13)
+
+# ╔═╡ fc939c43-de3f-4cce-abc0-5cc0e7a7377e
+#simshow(clamp.(.-mydiff .+ 0.0001, 0, 0.0002))
+
+# ╔═╡ 74462775-6ffa-4a8c-87a6-e13e45e98314
+mydiff = intensity_difference(as_czt_circ, as_circ, do_upsample2=false);
+
+# ╔═╡ a286c75a-868c-400b-b960-323e5f12ebf8
+z_circ
+
 # ╔═╡ 16a40756-2b97-4965-8627-831ecc6de4c8
 @time sft_fr_circ = fresnel(select_region(U_circ, M=2), z_circ, λ, 2 * L, skip_final_phase=true)
+
+# ╔═╡ 2e97955f-bed0-41ab-a1c6-d309c5b2b565
+compare(sft_fr_circ, as_circ, damp_range=0.03, do_upsample2=false)*100 # quantitative comparison
+
+# ╔═╡ 69a42880-cb84-4cb3-a6d0-0be249cfd0c0
+simshow(sft_fr_circ[1])
 
 # ╔═╡ dd434bfd-c14d-4417-922a-01a573c44143
 @time sft_fr_circ_cut = select_region(sft_fr_circ[1], M=0.5);
@@ -393,6 +466,9 @@ sft_fr_circ[2].L * 1e3
 
 # ╔═╡ 6af0bc99-4245-44f8-bc45-405f9e56b513
 @time sas_circ = scalable_angular_spectrum(U_circ, z_circ, λ, L, bandlimit_border=(0.98, 1), apply_bandlimit=true);
+
+# ╔═╡ 5c401fe7-3029-44f7-87cc-5c4f3d6ec58d
+compare(sas_circ, as_circ, damp_range=0.1, do_upsample2=false)*100 # quantitative comparison
 
 # ╔═╡ 3afb5c51-889f-43e4-9ef8-94bf63a31b6f
 @time sas_circ_nb = scalable_angular_spectrum(U_circ, z_circ, λ, L, apply_bandlimit=false);
@@ -437,65 +513,96 @@ simshow(intensity_difference(sas_circ, as_circ))
 compare(sas_circ, sas_circ)
 
 # ╔═╡ d623e68d-8cfd-4df8-af30-396097ddc6aa
+# ╠═╡ disabled = true
+#=╠═╡
 L_box = 128e-6;
+  ╠═╡ =#
 
 # ╔═╡ 81c307a0-82d4-4514-8d28-12e12defcea2
 N_box = 512;
 
 # ╔═╡ 01f39e27-8e6a-4056-b496-d6bdf955120f
+#=╠═╡
 y_box = fftpos(L_box, N_box, NDTools.CenterFT);
+  ╠═╡ =#
 
 # ╔═╡ 930bc90e-a55f-4674-a6f8-246efa183520
+#=╠═╡
 x_box = y_box';
+  ╠═╡ =#
 
 # ╔═╡ 22812caa-acc6-4a50-bdb0-d43b153c9c9a
+#=╠═╡
 D_box = L_box / 16
+  ╠═╡ =#
 
 # ╔═╡ 840f8832-ee38-4da5-b722-e9022fca3076
+#=╠═╡
 U_box = (x_box.^2 .<= (D_box / 2).^2) .* (y_box.^2 .<= (D_box / 2).^2) .* (exp.(1im .* 2π ./ λ .* y_box' .* sind(20)));
+  ╠═╡ =#
 
 # ╔═╡ af91c034-2f43-4786-aef7-a7bce45ab38e
 M_box = 8;
 
 # ╔═╡ 7b13f72d-6e5d-440b-b080-1301a1560acc
+#=╠═╡
 z_box = M_box / N_box / λ * L_box^2 * 2
+  ╠═╡ =#
 
 # ╔═╡ 1815437a-332c-4bc1-9b72-b75cd4b8b653
+#=╠═╡
 md"# Second Example: Quadratic
 
 
 The Fresnel number is $(round((D_box)^2 / z_box / λ, digits=3))
 "
+  ╠═╡ =#
 
 # ╔═╡ e4bb5e06-0b89-4c27-885f-0d13da6d2ff0
+#=╠═╡
 simshow(U_box)
+  ╠═╡ =#
 
 # ╔═╡ 9d78321e-6586-4c31-bec7-279d23c79841
+#=╠═╡
 @time as_box = angular_spectrum(select_region(U_box, new_size=round.(Int, size(U_box) .* M_box)), z_box, λ, L_box * M_box);
+  ╠═╡ =#
 
 # ╔═╡ dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
+#=╠═╡
 @time sft_fr_box = select_region(fresnel(select_region(U_box, M=2), z_box, λ, L_box, skip_final_phase=true)[1], M=1//2);
+  ╠═╡ =#
 
 # ╔═╡ b3e31f75-5216-47b5-85b3-026a0321c0a8
+#=╠═╡
 @time sas_box = scalable_angular_spectrum(U_box, z_box, λ, L_box, bandlimit_border=(0.8, 1.0), skip_final_phase=true);
+  ╠═╡ =#
 
 # ╔═╡ d128d0ec-61bd-46a2-a915-e42220cd09cc
+#=╠═╡
 simshow(abs2.(as_box[1]), γ=0.13, cmap=:inferno)
+  ╠═╡ =#
 
 # ╔═╡ ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
+#=╠═╡
 simshow(abs2.(sft_fr_box), γ=0.13, cmap=:inferno)
+  ╠═╡ =#
 
 # ╔═╡ 9c46ad96-96ac-4d40-bfec-d146451f1130
+#=╠═╡
 simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
+  ╠═╡ =#
 
 # ╔═╡ 4f9aab5a-8c2b-4424-97be-4d4b0ba07b3b
+#=╠═╡
 compare(sas_circ, as_box)*100
+  ╠═╡ =#
 
 # ╔═╡ 2f79966d-86a5-4066-a84e-a128c93247e8
 md"# Third Example: Hologram
 
 
-Reproduce the example from Asoubar et al. JOS-A 31, 591 (Fig. 5 & Table 1)
+Reproduce the example from Asoubar et al. JOS-A 31, 591, 2014 (Fig. 5 & Table 1)
 A hologram generates 5x5 beamlets at 10mm distance. The publication does not state the specifics of the hologram used. The table (Table 1) states the following values:
 - AS (SPW) propagation: 17521 x 17521, 0%
 - Fresnel: 462 x 462,  145%
@@ -511,7 +618,7 @@ Since Asoubar et al. do not disclose the exact pattern to propagate ('diffractiv
 λh = 532e-9; Lh = 0.837*2*277.3e-6; Nh = 462;
 
 # ╔═╡ 0e84ef74-2f4c-42d9-bfc1-92c5d82c459a
-Δxh = Lh/Nh; # sampling in the source plane
+Δxh = Lh/Nh # sampling in the source plane
 
 # ╔═╡ de1ef254-c6bc-4c31-ac03-2ee1cf57ed18
 yh = fftpos(Lh, Nh, NDTools.CenterFT);
@@ -2395,6 +2502,8 @@ version = "1.4.1+0"
 # ╠═b87f5371-13b0-4c73-91fb-8108a5a80a3e
 # ╠═e53711d2-68ed-4712-82ba-c11bc14ffab3
 # ╠═529a3df1-8a18-416e-9730-14eb10302fbb
+# ╠═5d639e0e-bc45-472b-8cb6-b78678671047
+# ╠═a5478663-3afd-4545-b666-b20ee196bd84
 # ╠═37b1e328-8c6f-4099-ab1f-89f1f09975c8
 # ╠═1f0cdb0e-440a-4bbc-861c-1fd8293fb8c3
 # ╠═5e0cdbd0-41a7-4cdc-9c91-06efe20a4769
@@ -2420,11 +2529,20 @@ version = "1.4.1+0"
 # ╠═764349e1-3b12-412b-bcdd-ba1bb64bc391
 # ╠═0cd5c3e8-39ca-40be-8fef-17faf7738b45
 # ╠═77f6528c-cf26-465e-a5bd-7bd336e1b4bc
+# ╠═3c7bb832-d0db-4f39-913f-6f36d931f0bc
+# ╠═1e6e8a5a-b757-44a5-9b23-70eb711da252
+# ╠═186ce137-3181-4faa-9f24-a1defcc68954
+# ╠═fc939c43-de3f-4cce-abc0-5cc0e7a7377e
+# ╠═74462775-6ffa-4a8c-87a6-e13e45e98314
+# ╠═a286c75a-868c-400b-b960-323e5f12ebf8
 # ╠═16a40756-2b97-4965-8627-831ecc6de4c8
+# ╠═2e97955f-bed0-41ab-a1c6-d309c5b2b565
+# ╠═69a42880-cb84-4cb3-a6d0-0be249cfd0c0
 # ╠═dd434bfd-c14d-4417-922a-01a573c44143
 # ╠═5196a182-4a90-48e6-9a0d-f6b27e9859b3
 # ╠═f2be0dce-c586-4cd3-b91d-b26511fad01a
 # ╠═6af0bc99-4245-44f8-bc45-405f9e56b513
+# ╠═5c401fe7-3029-44f7-87cc-5c4f3d6ec58d
 # ╠═3afb5c51-889f-43e4-9ef8-94bf63a31b6f
 # ╠═3524374c-97f0-4cdd-88cd-7ffbdb52834c
 # ╠═b95302c7-0385-46ac-8f53-2e6cf7cecea9

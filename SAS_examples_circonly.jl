@@ -406,12 +406,6 @@ simshow(U_circ)
 # ╔═╡ ae3b4a2a-d2c1-4e49-8c43-438895fd6d6d
 @time as_czt_circ = angular_spectrum(select_region(U_circ, new_size=round.(Int, size(U_circ) .* M)), pad_factor=2, z_circ, λ, M*L, apply_bandlimit=true, use_czt_zoom=true);
 
-# ╔═╡ c1ba6169-565d-400a-b85e-1b30a302e2dd
-tstint = abs2.(as_czt_circ[1]);
-
-# ╔═╡ 91ed6d75-ced4-433c-811e-7fd71d61f57e
-(1/0.485868)^2*2
-
 # ╔═╡ 78901c84-c586-475a-8beb-3784616c1970
 compare(as_czt_circ, as_circ, damp_range=0.03)*100 # quantitative comparison
 
@@ -2157,8 +2151,6 @@ version = "1.4.1+0"
 # ╠═0cd5c3e8-39ca-40be-8fef-17faf7738b45
 # ╠═77f6528c-cf26-465e-a5bd-7bd336e1b4bc
 # ╠═ae3b4a2a-d2c1-4e49-8c43-438895fd6d6d
-# ╠═c1ba6169-565d-400a-b85e-1b30a302e2dd
-# ╠═91ed6d75-ced4-433c-811e-7fd71d61f57e
 # ╠═78901c84-c586-475a-8beb-3784616c1970
 # ╠═d057b0e4-b959-4601-9cdf-0c86efa0ceb8
 # ╠═f9bc15d3-ed1c-4994-be3b-2f68c4fe0b7f
