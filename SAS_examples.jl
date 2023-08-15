@@ -528,8 +528,11 @@ simshow(U_box)
 # ╔═╡ 9d78321e-6586-4c31-bec7-279d23c79841
 @time as_box = angular_spectrum(select_region(U_box, new_size=round.(Int, size(U_box) .* M_box)), z_box, λ, L_box * M_box);
 
+# ╔═╡ 5fde2e0b-4bdb-4bcd-8985-9a0b54cbbf95
+@time sft_fr_box = fresnel(select_region(U_box, M=2), z_box, λ, L_box, skip_final_phase=true);
+
 # ╔═╡ dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
-@time sft_fr_box = select_region(fresnel(select_region(U_box, M=2), z_box, λ, L_box, skip_final_phase=true)[1], M=1//2);
+@time sft_fr_box_displ = select_region(sft_fr_box[1], M=1//2);
 
 # ╔═╡ b3e31f75-5216-47b5-85b3-026a0321c0a8
 @time sas_box = scalable_angular_spectrum(U_box, z_box, λ, L_box, skip_final_phase=true);
@@ -538,10 +541,13 @@ simshow(U_box)
 simshow(abs2.(as_box[1]), γ=0.13, cmap=:inferno)
 
 # ╔═╡ ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
-simshow(abs2.(sft_fr_box), γ=0.13, cmap=:inferno)
+simshow(abs2.(sft_fr_box_displ), γ=0.13, cmap=:inferno)
 
 # ╔═╡ 9c46ad96-96ac-4d40-bfec-d146451f1130
 simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
+
+# ╔═╡ 52b05713-0501-45ff-8bba-d5ba0776c846
+compare(sft_fr_box, as_box)*100
 
 # ╔═╡ 4f9aab5a-8c2b-4424-97be-4d4b0ba07b3b
 compare(sas_box, as_box)*100
@@ -2513,11 +2519,13 @@ version = "1.4.1+0"
 # ╠═7b13f72d-6e5d-440b-b080-1301a1560acc
 # ╠═e4bb5e06-0b89-4c27-885f-0d13da6d2ff0
 # ╠═9d78321e-6586-4c31-bec7-279d23c79841
+# ╠═5fde2e0b-4bdb-4bcd-8985-9a0b54cbbf95
 # ╠═dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
 # ╠═b3e31f75-5216-47b5-85b3-026a0321c0a8
 # ╠═d128d0ec-61bd-46a2-a915-e42220cd09cc
 # ╠═ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
 # ╠═9c46ad96-96ac-4d40-bfec-d146451f1130
+# ╠═52b05713-0501-45ff-8bba-d5ba0776c846
 # ╠═4f9aab5a-8c2b-4424-97be-4d4b0ba07b3b
 # ╠═77234bfc-a6a5-4ae9-88a9-fe7c499fbd8e
 # ╟─2f79966d-86a5-4066-a84e-a128c93247e8

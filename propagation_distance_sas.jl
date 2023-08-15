@@ -27,7 +27,7 @@ maxax = 1e10 .*Rsf
 minimum propagation distance to warrant the Fresnel limit for 2x padding
 """
 function z_L_Fresnel(pitch_over_lamba)
-    4*pitch_over_lamba
+    2*pitch_over_lamba
 end
 
 plot(Rsf,z_L.(Rsf), fillrange=z_L_Fresnel.(Rsf), fillalpha=0.2, xlabel="pixel pitch / λ", yaxis=:log, ylabel="z / L", label="SAS Vignetting Limit",legend=:bottomright, color=:green)
