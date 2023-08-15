@@ -517,7 +517,7 @@ simshow(U_box)
 compare(sas_box, as_box)*100
 
 # ╔═╡ f7874387-fed8-41a9-9b66-3c0847e485b6
-compare(fresnel(select_region(U_box, M=2), z_box, λ, L_box, skip_final_phase=true), as_box)*100
+compare(sft_fr_box, as_box)*100
 
 # ╔═╡ d128d0ec-61bd-46a2-a915-e42220cd09cc
 simshow(abs2.(as_box[1]), γ=0.13, cmap=:inferno)
