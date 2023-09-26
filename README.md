@@ -7,6 +7,8 @@ It's implementation essentially consists of three FFTs and some phase factors.
 This image compares the three methods for accuracy.
 ![](example.png)
 
+The calculation time for Fresnel was 0.04s, the one for SAS around 0.12s. But AS takes around 6s because of large padding!
+
 # Publication and Citation
 For more details about the mathematics and physics behind this method, see this [preprint](https://preprints.opticaopen.org/articles/preprint/Scalable_angular_spectrum_propagation/23498453).
 Please consider citing this, if you find it useful:
