@@ -10,16 +10,22 @@ This image compares the three methods for accuracy.
 The calculation time for Fresnel was 0.04s, the one for SAS around 0.12s. But AS takes around 6s because of large padding!
 
 # Publication and Citation
-For more details about the mathematics and physics behind this method, see this [preprint](https://preprints.opticaopen.org/articles/preprint/Scalable_angular_spectrum_propagation/23498453).
+For more details about the mathematics and physics behind this method, see this [OPTICA publication](https://opg.optica.org/optica/fulltext.cfm?uri=optica-10-11-1407&id=541154).
 Please consider citing this, if you find it useful:
 ```
-@article{Heintzmann2023,
-author = "Rainer Heintzmann and Lars Loetgering and Felix Wechsler",
-title = "{Scalable angular spectrum propagation}",
-year = "2023",
-month = "6",
-url = "https://preprints.opticaopen.org/articles/preprint/Scalable_angular_spectrum_propagation/23498453",
-doi = "10.1364/opticaopen.23498453.v1"
+@article{Heintzmann:23,
+author = {Rainer Heintzmann and Lars Loetgering and Felix Wechsler},
+journal = {Optica},
+keywords = {Fourier transforms; Inverse design; Phase retrieval; Spatial frequency; Synthetic aperture radar; Wave propagation},
+number = {11},
+pages = {1407--1416},
+publisher = {Optica Publishing Group},
+title = {Scalable angular spectrum propagation},
+volume = {10},
+month = {Nov},
+year = {2023},
+url = {https://opg.optica.org/optica/abstract.cfm?URI=optica-10-11-1407},
+doi = {10.1364/OPTICA.497809}
 }
 ```
 
