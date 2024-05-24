@@ -18,9 +18,33 @@ function z_L4(R)
 end
 
 zeroax = 0.0001 .*Rsf
+min_q1 = 
 maxax = 1e10 .*Rsf
-plot(Rsf,z_L.(Rsf), fillrange=zeroax, fillalpha=0.2, xlabel="pixel pitch / λ", yaxis=:log, ylabel="distance / L", label="SAS Vignetting Limit",legend=:bottomright, color=:green)
+
+"""
+    z_L_Fresnel(pitch_over_lamba)
+
+minimum propagation distance to warrant the Fresnel limit for 2x padding
+"""
+function z_L_Fresnel(pitch_over_lamba)
+    2*pitch_over_lamba
+end
+
+plot(Rsf,z_L.(Rsf), fillrange=z_L_Fresnel.(Rsf), fillalpha=0.2, xlabel="pixel pitch / λ", yaxis=:log, ylabel="z / L", label="SAS Vignetting Limit",legend=:bottomright, color=:green)
+# plot(Rs,z_L.(Rs), fillrange=zeroax, fillalpha=0.2, label=nothing,color=:green)
+plot!(Rsf, z_L_Fresnel.(Rsf), fillrange=zeroax, fillalpha=0.2, label="Minimum distance (M=1)", color=:yellow)
 ylims!((0.01,1e6))
+
+
+"""
+    z_L_AS(pitch_over_lamba)
+
+maximum propagation distance for 2x padding and Angular Spectrum (AS) Propagation
+"""
+function z_L_AS(pitch_over_lamba)
+    2*sqrt.(4*pitch_over_lamba.^2 .- 1)
+end
+# plot!(Rs, z_L_AS.(Rs), label="AS maximum distance", color=:green, linestyle=:dash)
 
 N = 256.0
 vline!([0.5], xticks=[0.5,(2:2:14)...],seriestype = :vline, label="λ/2 pixel pitch", color=:blue)
@@ -80,7 +104,7 @@ function R_from_M(M)
 end
 
 function show_Ms()
-    for M in (2.0, 3.0, 5.0, 10.9, 20, 50, 100, 200, 500, 1000, 2000)
+    for M in (2.0, 3.0, 5.0, 10.9, 20, 100, 200, 500, 1000, 2000)
         myR = R_from_M(M)
         # M = round(z_L(myR) ./ myR / 2 *100)/100
         zL = round(z_L.(myR)*100)/100
@@ -93,15 +117,33 @@ end
 
 show_Ms()
 
-function plot_RM(R, M, col=:green, sym="x", toleft=0.09)
+function plot_RM(R, M, col=:green, sym="x", toleft=0.09; move_down=nothing, thetext=nothing)
     zL = M * 2 * R
-    display(annotate!(R-toleft, zL, text("$(sym)   M=$(M)", col, :left, 8)))
+    if isnothing(thetext)
+        thetext = "M=$(M)";
+    end
+    if isnothing(move_down)
+        thetext = "$(sym)   $(thetext)"
+        display(annotate!(R-toleft, zL, text(thetext, col, :left, 8)))
+    else
+        display(annotate!(R-toleft, zL, text("$(sym)", col, :left, 8)))
+        thetext = "     $(thetext)"
+        display(annotate!(R-toleft, zL-move_down, text(thetext, col, :left, 8)))
+    end
 end
 
 # Add a green dot for R=0.5, M=5
-plot_RM(0.5, 5, :green)
+plot_RM(0.5, 5, :green, move_down=1.0)
 # Add a purple dot for R=0.5, M=15
 plot_RM(0.5, 15, :purple)
+
+# The parameters of Asoubar et al. JOS-A 31, 591 (Fig. 5 & Table 1) 
+# λ_h = 532 nm
+# L_h = 837 * 2 * 277.3 µm = 
+# z_h = 10e-3; # 1cm propagation distance
+# pixel_pitch / λ =  1µm / 0.532µm = 1.8797
+# z/L = 10e3 / 464200 = 21.54
+plot_RM(1.8797, 21.54, :black, thetext="Asoubar et al.")
 
 # Fig. 6: M∘=4, R = (64µm / 512) / 0.5µm = 0.25
 plot_RM(0.25, 4, :black, "∘", 0.08)

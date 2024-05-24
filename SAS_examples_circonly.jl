@@ -5,7 +5,7 @@ using Markdown
 using InteractiveUtils
 
 # ╔═╡ 4f0ea44a-5475-11ed-3979-6d7d4c1a8ce1
-using FFTW, NDTools, Interpolations, IndexFunArrays, Colors, ImageShow, ImageIO, FourierTools, Plots, Interpolations, PlutoUI, ColorSchemes, TestImages, ImageQualityIndexes
+using FFTW, NDTools, Interpolations, IndexFunArrays, Colors, ImageShow, ImageIO, FourierTools, Plots, Interpolations, PlutoUI, ColorSchemes, TestImages, View5D
 
 # ╔═╡ 2bd51f20-7abb-4d95-a56b-c2e058c2a1be
 md"# Scaled Angular Spectrum
@@ -53,82 +53,40 @@ function find_width_window(ineq_1D::AbstractVector, bandlimit_border)
 	return ineq_v_b, ineq_v_e
 end
 
-# ╔═╡ 5d639e0e-bc45-472b-8cb6-b78678671047
-function damp_edge_outside_cpx(arr, damp_range)
-	return complex.(damp_edge_outside(real.(arr), damp_range), damp_edge_outside(imag.(arr), damp_range))
-end
-
-# ╔═╡ b06b3800-df52-4e8b-94b0-6627ab3e3f82
-""" 
-	apply_parabolic_phase!(field_tuple)
-
-applies the parabolic phase stored as the named parameters `dq` and `curvature` in the second member of the field tuple to the field stored in the first member of the field tuple.
-"""
-function apply_parabolic_phase!(field_tuple)
-	sz = size(field_tuple[1])
-	q_y = similar(field_tuple[1], sz[1])
-	# fftpos generates coordinates from -L/2 to L/2 but excluding the last 
-	# final bit
-	q_y .= fftpos(field_tuple[2].dq * sz[1], sz[1], CenterFT)
-	q_x = q_y'
-	field_tuple[1] .*= exp.(1im .* field_tuple[2].curvature .* (q_x .^ 2 .+ q_y .^2))
-end
-
 # ╔═╡ 37b1e328-8c6f-4099-ab1f-89f1f09975c8
-"""
-	resample_to(arr, ref; damp_range=0.03, apply_parabolic=true)
+""" function resample_int_to(arr, ref; damp_range=0.03)
 
-Resamples the input amplitude to the sampling of the reference and extracts a common region in both fields. If `apply_parabolic` is true, the parabolic phase, stored in the first field will be applied to the resampled field. 
+computes intensity from the input amplitudes and resamples them to a common grid and extracts a common region in both.
 """
-function resample_to(arr, ref; damp_range=0.1, apply_parabolic=true)
-	damp_arr = damp_edge_outside_cpx(arr[1], (damp_range, damp_range));
-	# myzoom below is only used for the parabolic phase, which is why we use the
-	# wanted zoom and not the actual zoom (nz ./ size(damp_arr));
-	myzoom = arr[2].sampling ./ ref[2].sampling
-	nz = round.(Int, size(damp_arr) .* myzoom);
-	resarr = fftshift(resample(ifftshift(damp_arr), nz)) * sqrt(prod(size(damp_arr)) / prod(nz));
+function resample_int_to(arr, ref; damp_range=0.03)
+	int_arr = damp_edge_outside(abs2.(arr[1]),(damp_range, damp_range));
+	nz = round.(Int, size(int_arr) .* arr[2].sampling ./ ref[2].sampling);
+	arr = fftshift(resample(ifftshift(int_arr), nz)) * prod(size(int_arr)) / prod(nz);
 	sz = min.(size(ref[1]), nz);
-	res_arr = select_region(resarr, new_size=sz);
-	res_ref = select_region(ref[1], new_size=sz)
-	if (apply_parabolic)
-		if (hasproperty(arr[2],:dq))
-			apply_parabolic_phase!((res_arr, (;dq=arr[2].dq/myzoom[1], curvature=arr[2].curvature)));
-		end
-		if (hasproperty(ref[2],:dq))
-			apply_parabolic_phase!((res_ref, ref[2]));
-		end
-	end
-	return res_arr, res_ref
+	arr = select_region(arr, new_size=sz)
+	ref = select_region(abs2.(ref[1]), new_size=sz)
+	return arr, ref
 end
 
 # ╔═╡ 1f0cdb0e-440a-4bbc-861c-1fd8293fb8c3
-"""
-	amp_difference(arr, ref; damp_range=0.1)
+""" intensity_difference(arr, ref; damp_range=0.03)
 
-Subtracts the intensities derived from two amplitudes with potentially different sampling and sizes. 
+subtracts the intensities derived from two amplitudes with potentially different sampling and sizes. 
 """
-function amp_difference(arr, ref; damp_range=0.03, apply_parabolic=true)
-	res_arr, res_ref = resample_to(arr, ref; damp_range=damp_range, apply_parabolic=apply_parabolic)
-	return res_arr .- res_ref
+function intensity_difference(arr, ref; damp_range=0.03)
+	arr_int, ref_int = resample_int_to(arr, ref; damp_range=damp_range)
+	return arr_int .- ref_int
 end
 
 # ╔═╡ 5e0cdbd0-41a7-4cdc-9c91-06efe20a4769
-""" 
-	compare(arr, ref; damp_range=0.03)
+"""  function compare(arr, ref; damp_range=0.03)
 
-The comparison is based on resampling `arr` and cutting both arrays to smaller of both sizes.
+the comparison is based on resampling `arr` and cutting both arrays to smaller of both sizes.
+
 """
-function compare(arr, ref; damp_range=0.03, apply_parabolic=true)
-	arr, ref = resample_to(arr, ref; damp_range=damp_range, apply_parabolic=apply_parabolic)
-	return sum(abs2.(arr .- ref)) / sum(abs2.(ref))
-end
-
-# ╔═╡ 7038515e-17a8-4207-9551-4c2ef00a85b1
-begin  # just a small test for the compare function to see if it works
-	qq = rand(ComplexF64, 100,100);
-	tt = (qq,(;sampling=0.123,));
-	ss = (.-qq, (;sampling=0.123,));
-	compare(ss,tt, apply_parabolic=false)
+function compare(arr, ref; damp_range=0.03)
+	arr_int, ref_int = resample_int_to(arr, ref; damp_range=damp_range)
+	return sum(abs2.(arr_int .- ref_int)) / sum(abs2.(ref_int))
 end
 
 # ╔═╡ 45e9dad4-8f26-45c6-b58e-93d634881f60
@@ -139,6 +97,9 @@ md"# Fresnel Propagation"
 
 # ╔═╡ 004097d8-1906-4151-a4f3-4be7f7a71434
 md"# Scaled Angular Spectrum"
+
+# ╔═╡ fdb237d3-5c00-463c-9671-3de7ee3e2bcc
+
 
 # ╔═╡ fd94ba72-5130-40e8-884c-37899b2f2fa7
 λ = 500e-9
@@ -162,13 +123,13 @@ D_circ = N / 8
 U_circ = ComplexF64.(rr((N, N)) .< D_circ / 2) .* exp.(1im .* 2π ./ λ .* y .* sind(45)) .+ ComplexF64.(rr((N, N)) .< D_circ / 2) .* exp.(1im .* 2π ./ λ .* y' .* sind(-45));
 
 # ╔═╡ 694b3ac0-51e2-46b4-a5ce-8b1a93d6a368
-M=4
+M = 4
 
 # ╔═╡ e05c6882-81f9-4784-ab7e-7a9a8d296b6d
 """
     _propagation_variables(field, z, λ, L)
 
-Internal method to create variables we need for propagation such as frequencies in Fourier space, etc.
+Internal method to create variables we need for propagation such as frequencies in Fourier space, etc..
 """
 function _propagation_variables(field::AbstractArray{T, M}, z, λ, L) where {T, M} 
 	@assert size(field, 1) == size(field, 2) "Quadratic fields only working currently"
@@ -201,20 +162,14 @@ end
 
 # ╔═╡ adfcc771-e092-4dd3-8ff9-9a940c1c29a3
 """
-	angular_spectrum(field, z, λ, L; pad_factor = 2, apply_bandlimit=true, bandlimit_border=(0.9, 1),  use_czt_zoom = false)
+	angular_spectrum(field, z, λ, L; pad_factor = 2, apply_bandlimit = true)
 
 Returns the the electrical field with physical length `L` and wavelength `λ` propagated with the angular spectrum method of plane waves (AS) by the propagation distance `z`.
-
-* `pad_factor` allows to defined how much zero-padding relative to the field to propagate is used.
-* `apply_bandlimt` defines whether high-angle rays (undersampled phases in Fourier space) are suppressed
-* `bandlimit_border` provides two values defining the start and end of the band-limit filter to apply.
-* `use_czt_zoom` applies a zoom into the region, such that the band_limit is placed at the XY-border. This changes the pixelsize
-
+`pad_factor` allows to defined how much zero-padding relative to the field to propagate is used.
+`apply_bandlimt` defines whether high-angle rays (undersampled phases in Fourier space) are suppressed
+`use_czt_zoom` applies a zoom into the region, such that the band_limit is placed at the XY-border. This changes the pixelsize
 """
-function angular_spectrum(field::Matrix{T}, z, λ, L; 
-					pad_factor=2, apply_bandlimit=true, bandlimit_border=(0.9, 1), 
-					use_czt_zoom=false) where T
-	
+function angular_spectrum(field::Matrix{T}, z, λ, L; pad_factor = 2, apply_bandlimit = true, use_czt_zoom = false) where T
 	@assert size(field, 1) == size(field, 2) "Restricted to quadratic fields."
 	# we need to apply padding to prevent circular convolution
 	L_new = pad_factor .* L
@@ -239,6 +194,7 @@ function angular_spectrum(field::Matrix{T}, z, λ, L;
 		# zoom = L_new sqrt(-M^2 λ^2 + sqrt(M^4λ^4 + 64 z^2M^2λ^2)) / (2sqrt(2)zMλ)
 		M = size(field_new, 1)
 		zoom = L_new * sqrt(-M^2*λ^2 + sqrt(M^4*λ^4 + 64*z^2*M^2*λ^2)) / (2*sqrt(2)*z*M*λ)
+		println("czt zoom factor: $(zoom)")
 		field_new .*= zoom
 		ft_field = ifftshift(czt(field_new, (1/zoom, 1/zoom))) #
 		L /= zoom;
@@ -263,12 +219,13 @@ function angular_spectrum(field::Matrix{T}, z, λ, L;
 		
 		# bandlimit filter
 		# smoothing at 0.8 is arbitrary but works well
-		W = .*(smooth_f.(abs2.(f_y) ./ u_limit^2 .+ abs2.(f_x) * λ^2, bandlimit_border[1], bandlimit_border[2]),
-			 smooth_f.(abs2.(f_x) ./ u_limit^2 .+ abs2.(f_y) * λ^2, bandlimit_border[1], bandlimit_border[2]))
+		W = .*(smooth_f.(abs2.(f_y) ./ u_limit^2 .+ abs2.(f_x) * λ^2, 0.8, 1),
+			 smooth_f.(abs2.(f_x) ./ u_limit^2 .+ abs2.(f_y) * λ^2, 0.8, 1))
 
 		# apply band-limit
 		H .*= W;
 	end
+	println("pixels to propagate: $(size(H,1))x$(size(H,2)).")
 	# propagate field
 	field_out = fftshift(ifft(ft_field .* H ))
 	# take center part because of circular convolution
@@ -283,6 +240,7 @@ end
 	fresnel(field, z, λ, L; skip_final_phase=true)
 
 Returns the the electrical field with physical length `L` and wavelength `λ` propagated with the fresnel method of plane waves (AS) by the propagation distance `z`.
+
 
 """
 	function fresnel(field::Matrix{T}, z, λ, L; skip_final_phase=true) where T
@@ -304,22 +262,27 @@ Returns the the electrical field with physical length `L` and wavelength `λ` pr
 	dq = λ * z / L_new
 	Q = dq * N
 	
+	q_y = similar(field, N)
+	q_y .= ifftshift(fftpos(M * L_new, N, CenterFT))
+	q_x = q_y'
+	
 	# calculate phases of Fresnel
 	H₁ = exp.(1im .* k ./ (2 .* z) .* (x .^ 2 .+ y .^ 2))
 
 	# skips multiplication of final phase
-	field_out = exp.(1im .* k .* z) .* fftshift(fft(ifftshift(field_new) .* H₁))
+	if skip_final_phase
+		field_out = fftshift(fft(ifftshift(field_new) .* H₁))
+	else
+		H₂ = (exp.(1im .* k .* z) .*
+			 exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
+		field_out = fftshift(fft(ifftshift(field_new) .* H₁) .* H₂)
+	end
 	
 	# fix scaling
 	field_out .*= 1 / (1im * T(sqrt(length(field_out)))) 
 	
 	# transfer function kernel of angular spectrum
-	field_tuple = (field_out, (; L=Q, sampling=Q/size(field_out,1), dq =dq, curvature = k ./ (2 .* z)))
-
-	if (!skip_final_phase)
-		apply_parabolic_phase!(field_tuple)
-	end
-	return field_tuple
+	return field_out, (; L=Q, sampling=Q/size(field_out,1))
 end
 
 # ╔═╡ 4db3a990-4e5d-4fe7-89cc-4823d1b5b592
@@ -327,13 +290,13 @@ end
 	scalable_angular_spectrum(field, z, λ, L; skip_final_phase=true, apply_bandlimit = true)
 
 Returns the the electrical field with physical length `L` and wavelength `λ` propagated with the Scaled Angular Spectrum (SAS) of plane waves (AS) by the propagation distance `z`.
-
-
 """
 function scalable_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ; 
-								 pad_factor=2, skip_final_phase=true,  set_pad_zero=false, 
-								bandlimit_border=(0.9, 1), apply_bandlimit = true) where {T} 
+								 pad_factor=2, skip_final_phase=true,  set_pad_zero=false, bandlimit_soft_px=20,
+								bandlimit_border=(0.8, 1), apply_bandlimit = true) where {T} 
+	@assert bandlimit_soft_px ≥ 0 "bandlimit_soft_px must be ≥ 0"
 	@assert size(ψ₀, 1) == size(ψ₀, 2) "Restricted to quadratic fields."
+	
 	
 	N = size(ψ₀, 1)
 	z_limit = (- 4 * L * sqrt(8*L^2 / N^2 + λ^2) * sqrt(L^2 * inv(8 * L^2 + N^2 * λ^2)) / (λ * (-1+2 * sqrt(2) * sqrt(L^2 * inv(8 * L^2 + N^2 * λ^2)))))
@@ -374,6 +337,7 @@ function scalable_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 		# take the difference here, key part of the ScaledAS
 		ΔH = exp.(1im .* k .* z .* (H_AS .- H_Fr)) 
 	end
+	println("pixels to propagate: $(size(H_AS,1))x$(size(H_AS,2)).")
 	
 	# apply precompensation
 	ψ_precomp = ifft(fft(ifftshift(ψ_p)) .* ΔH)
@@ -386,33 +350,41 @@ function scalable_angular_spectrum(ψ₀::Matrix{T}, z, λ, L ;
 		ψ_precomp = select_region(ψ_precomp, new_size=pad_factor .* size(ψ₀))
 		ψ_precomp = ifftshift(ψ_precomp)
 	end
-		
+	
+	# new sample coordinates
+	dq = λ * z / L_new
+	Q = dq * N * pad_factor
+	q_y = similar(ψ_p, pad_factor * N)
+	# fftpos generates coordinates from -L/2 to L/2 but excluding the last 
+	# final bit
+	q_y .= ifftshift(fftpos(dq * pad_factor * N, pad_factor * N, CenterFT))
+	q_x = q_y'
+	
 	# calculate phases of Fresnel
 	H₁ = exp.(1im .* k ./ (2 .* z) .* (x .^ 2 .+ y .^ 2))
 
 	# skip final phase because often undersampled
-	ψ_p_final = exp.(1im .* k .* z) .* fftshift(fft(H₁ .* ψ_precomp))
+	if skip_final_phase
+		ψ_p_final = fftshift(fft(H₁ .* ψ_precomp))
+	else
+		H₂ = (exp.(1im .* k .* z) .*
+			 exp.(1im .* k ./ (2 .* z) .* (q_x .^ 2 .+ q_y .^2)))
+		ψ_p_final = fftshift(H₂ .* fft(H₁ .* ψ_precomp))
+	end
 	
 	# fix absolute scaling of field
 	ψ_p_final .*= 1 / (1im * T(sqrt(length(ψ_precomp)))) 
 	# unpad/crop/extract center
 	ψ_final = select_region(ψ_p_final, new_size=size(ψ₀))
 	
-	field_tuple = (ψ_final, (;L=L * M, W, sampling=(L*M)/size(ψ_final,1), dq =λ * z / L_new, curvature = k ./ (2 .* z)))
-
-	
-	if (!skip_final_phase)
-		apply_parabolic_phase!(field_tuple)
-	end
-	
-	return field_tuple
+	return ψ_final, (;Q, L=L * M, W, sampling=(L*M)/size(ψ_final,1))
 end
 
 # ╔═╡ 6fa374ce-6953-443a-94a0-9859237fe345
 z_circ = M / N /λ * L^2 * 2
 
 # ╔═╡ c7194950-26ff-4972-81be-1fabf1ba9dcf
-md"# First Example: Circular Aperture
+md"# First Example: Circular
 
 In the first example, one straight beam and one oblique beam are passing through a round aperture.
 
@@ -422,395 +394,83 @@ The Fresnel number is $(round((D_circ / 2 * L / N)^2 / z_circ / λ, digits=3))
 # ╔═╡ 6a977f39-626a-441a-816a-66f4b8e0c64c
 z_circ / L
 
+# ╔═╡ 764349e1-3b12-412b-bcdd-ba1bb64bc391
+z_circ
+
 # ╔═╡ 0cd5c3e8-39ca-40be-8fef-17faf7738b45
 simshow(U_circ)
 
 # ╔═╡ 77f6528c-cf26-465e-a5bd-7bd336e1b4bc
-@time as_circ = angular_spectrum(select_region(U_circ, new_size=round.(Int, size(U_circ) .* M)), pad_factor=6, z_circ, λ, L * M)
+@time as_circ = angular_spectrum(select_region(U_circ, new_size=round.(Int, size(U_circ) .* M)), pad_factor=4, z_circ, λ, L * M)
 
-# ╔═╡ 3c7bb832-d0db-4f39-913f-6f36d931f0bc
+# ╔═╡ ae3b4a2a-d2c1-4e49-8c43-438895fd6d6d
 @time as_czt_circ = angular_spectrum(select_region(U_circ, new_size=round.(Int, size(U_circ) .* M)), pad_factor=2, z_circ, λ, M*L, apply_bandlimit=true, use_czt_zoom=true);
 
-# ╔═╡ 6af0bc99-4245-44f8-bc45-405f9e56b513
-@time sas_circ = scalable_angular_spectrum(U_circ, z_circ, λ, L, apply_bandlimit=true);
+# ╔═╡ 78901c84-c586-475a-8beb-3784616c1970
+compare(as_czt_circ, as_circ, damp_range=0.03)*100 # quantitative comparison
 
-# ╔═╡ 3afb5c51-889f-43e4-9ef8-94bf63a31b6f
-@time sas_circ_nb = scalable_angular_spectrum(U_circ, z_circ, λ, L, apply_bandlimit=false); # to see the benefit of the band limit
+# ╔═╡ d057b0e4-b959-4601-9cdf-0c86efa0ceb8
+simshow(ft(as_czt_circ[1]), γ=.13)
+
+# ╔═╡ f9bc15d3-ed1c-4994-be3b-2f68c4fe0b7f
+simshow(.-intensity_difference(as_czt_circ, as_circ))
+
+# ╔═╡ 0b053090-9b8c-4681-bbb3-7a0312dcc65b
+# @vv resample_int_to(as_czt_circ, as_circ)
 
 # ╔═╡ 16a40756-2b97-4965-8627-831ecc6de4c8
 @time sft_fr_circ = fresnel(select_region(U_circ, M=2), z_circ, λ, 2 * L, skip_final_phase=true)
 
 # ╔═╡ dd434bfd-c14d-4417-922a-01a573c44143
-sft_fr_circ_cut = select_region(sft_fr_circ[1], M=0.5);
+@time sft_fr_circ_cut = select_region(sft_fr_circ[1], M=0.5);
 
-# ╔═╡ 1e6e8a5a-b757-44a5-9b23-70eb711da252
-compare(as_czt_circ, as_circ, damp_range=0.1)*100 # quantitative comparison
+# ╔═╡ 5196a182-4a90-48e6-9a0d-f6b27e9859b3
+as_circ[2].L * 1e3
 
-# ╔═╡ 2e97955f-bed0-41ab-a1c6-d309c5b2b565
-compare(sft_fr_circ, as_circ)*100 # quantitative comparison
+# ╔═╡ f2be0dce-c586-4cd3-b91d-b26511fad01a
+sft_fr_circ[2].L * 1e3
 
-# ╔═╡ 5c401fe7-3029-44f7-87cc-5c4f3d6ec58d
-compare(sas_circ, as_circ, damp_range=0.1)*100 # quantitative comparison
+# ╔═╡ 6af0bc99-4245-44f8-bc45-405f9e56b513
+@time sas_circ = scalable_angular_spectrum(U_circ, z_circ, λ, L, bandlimit_border=(0.98, 1), apply_bandlimit=true);
 
-# ╔═╡ c413248c-d082-4580-844f-916597852eb0
-compare(sas_circ_nb, as_circ, damp_range=0.1)*100 # quantitative comparison
+# ╔═╡ 3afb5c51-889f-43e4-9ef8-94bf63a31b6f
+@time sas_circ_nb = scalable_angular_spectrum(U_circ, z_circ, λ, L, apply_bandlimit=false);
 
 # ╔═╡ 3524374c-97f0-4cdd-88cd-7ffbdb52834c
 simshow(abs2.(as_circ[1]), γ=0.13, cmap=:inferno)
 
-# ╔═╡ 45872398-895b-4713-b33a-ca573920efc6
-sum(resample(abs2.(as_circ[1]), (512, 512), normalize=false))
-
-# ╔═╡ 9df1ae34-d976-4513-9704-0f99dacbf01c
-sum(abs2.(sas_circ[1]))
-
 # ╔═╡ b95302c7-0385-46ac-8f53-2e6cf7cecea9
 simshow(abs2.(sft_fr_circ_cut), γ=0.13, cmap=:inferno)
 
-# ╔═╡ 103e1291-2a49-409d-8c53-6edc63de6f2c
-simshow(abs.(abs2.(as_circ[1][1:4:end, 1:4:end]) .- abs2.(sas_circ[1])), γ=0.13, cmap=:inferno)
+# ╔═╡ b4760cdb-331f-44ac-abf0-f7b8d131fb1e
+compare(sft_fr_circ, as_circ)*100 # quantitative error in percent
 
 # ╔═╡ c4f2b545-cd1d-4ae2-bccb-7a89119ae7df
 simshow(abs2.(sas_circ[1]), γ=0.13, cmap=:inferno)
 
-# ╔═╡ 9a34e78f-8a14-405d-bcb9-7184ba01b767
-md"#
+# ╔═╡ c69655dd-3380-4880-9eef-2bbc91c6933c
+simshow(damp_edge_outside(abs2.(sas_circ[1]),(0.03,0.03)), γ=0.13, cmap=:inferno)
 
-#### SSIM of AS and SAS: $(round(assess_ssim(resample(abs2.(as_circ[1]), (512, 512), normalize=false), abs2.(sas_circ[1])), digits=6))
+# ╔═╡ 5766673b-f1e6-4eeb-acca-4b92b87a9553
+compare(sas_circ, as_circ, damp_range=0.03)*100 # quantitative comparison
 
-#### SSIM of AS and SFT-FR: $(round(assess_ssim(resample(abs2.(as_circ[1]), (512, 512), normalize=false), abs2.(sft_fr_circ)), digits=6))
-"
+# ╔═╡ cd982add-2a87-4f0b-9701-4c1f5109168e
+compare(sas_circ_nb, as_circ, damp_range=0.03)*100 # quantitative comparison
 
-# ╔═╡ d623e68d-8cfd-4df8-af30-396097ddc6aa
-L_box = 128e-6;
+# ╔═╡ 497d07d1-0e04-4068-890a-076cfa8e7975
+simshow(intensity_difference(as_circ, sas_circ_nb).+0.5,)
 
-# ╔═╡ 81c307a0-82d4-4514-8d28-12e12defcea2
-N_box = 512;
+# ╔═╡ d4f91a44-8ad3-4086-aa0d-a7e13abc2f26
+simshow(ft(intensity_difference(as_circ, sas_circ)))
 
-# ╔═╡ 01f39e27-8e6a-4056-b496-d6bdf955120f
-y_box = fftpos(L_box, N_box, NDTools.CenterFT);
+# ╔═╡ 0fa8e819-bbf1-4da7-bf05-5a1ca4980193
+findmax(intensity_difference(sas_circ, as_circ))
 
-# ╔═╡ 930bc90e-a55f-4674-a6f8-246efa183520
-x_box = y_box';
+# ╔═╡ d2836dff-80a0-4db3-a748-8555bbaed55e
+mysas, myas = resample_int_to(as_circ, sas_circ);
 
-# ╔═╡ 22812caa-acc6-4a50-bdb0-d43b153c9c9a
-D_box = L_box / 16
-
-# ╔═╡ 840f8832-ee38-4da5-b722-e9022fca3076
-U_box = (x_box.^2 .<= (D_box / 2).^2) .* (y_box.^2 .<= (D_box / 2).^2) .* (exp.(1im .* 2π ./ λ .* y_box' .* sind(20)));
-
-# ╔═╡ af91c034-2f43-4786-aef7-a7bce45ab38e
-M_box = 8;
-
-# ╔═╡ 7b13f72d-6e5d-440b-b080-1301a1560acc
-z_box = M_box / N_box / λ * L_box^2 * 2
-
-# ╔═╡ 1815437a-332c-4bc1-9b72-b75cd4b8b653
-md"# Second Example: Square Aperture
-
-
-The Fresnel number is $(round((D_box)^2 / z_box / λ, digits=3))
-"
-
-# ╔═╡ e4bb5e06-0b89-4c27-885f-0d13da6d2ff0
-simshow(U_box)
-
-# ╔═╡ 9d78321e-6586-4c31-bec7-279d23c79841
-@time as_box = angular_spectrum(select_region(U_box, new_size=round.(Int, size(U_box) .* M_box)), z_box, λ, L_box * M_box);
-
-# ╔═╡ 5fde2e0b-4bdb-4bcd-8985-9a0b54cbbf95
-@time sft_fr_box = fresnel(select_region(U_box, M=2), z_box, λ, L_box, skip_final_phase=true);
-
-# ╔═╡ dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
-@time sft_fr_box_displ = select_region(sft_fr_box[1], M=1//2);
-
-# ╔═╡ b3e31f75-5216-47b5-85b3-026a0321c0a8
-@time sas_box = scalable_angular_spectrum(U_box, z_box, λ, L_box, skip_final_phase=true);
-
-# ╔═╡ 4f9aab5a-8c2b-4424-97be-4d4b0ba07b3b
-compare(sas_box, as_box)*100
-
-# ╔═╡ f7874387-fed8-41a9-9b66-3c0847e485b6
-compare(sft_fr_box, as_box)*100
-
-# ╔═╡ d128d0ec-61bd-46a2-a915-e42220cd09cc
-simshow(abs2.(as_box[1]), γ=0.13, cmap=:inferno)
-
-# ╔═╡ ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
-simshow(abs2.(sft_fr_box_displ), γ=0.13, cmap=:inferno)
-
-# ╔═╡ 9c46ad96-96ac-4d40-bfec-d146451f1130
-simshow(abs2.(sas_box[1]), γ=0.13, cmap=:inferno)
-
-# ╔═╡ 2f79966d-86a5-4066-a84e-a128c93247e8
-md"# Third Example: 5x5 Beamsplitter-Hologram
-
-
-Reproduce the example from Asoubar et al. JOS-A 31, 591, 2014 (Fig. 5 & Table 1)
-A hologram generates 5x5 beamlets at 10mm distance. The publication does not state the specifics of the hologram used. The table (Table 1) states the following values:
-- AS (SPW) propagation: 17521 x 17521, 0%
-- Fresnel: 462 x 462,  145%
-- Semianalytical SPW propagation (Taylor): 2053 x 2053,  0.006%
-- Semianalytical SPW propagation (Avoort): 1252 x 1252,  0.006%
-presumably the field to propagate has 462 x 462 pixels with the following parameters:
-- λ = 532 nm
-- L = 2 * 277.3 µm
-Since Asoubar et al. do not disclose the exact pattern to propagate ('diffractive beam splitter, which consists of 16 discrete phase levels'), we calculated such phase levels by the help of an IFTA algorithm.
-"
-
-# ╔═╡ d0841cb8-3b2a-4242-8769-fe9e2bca4915
-λh = 532e-9; Lh = 0.837 * 2*277.3e-6; Nh = 462; # the factor 0.837 is to make the result size of sas directly agree to the destination field size
-
-# ╔═╡ 0e84ef74-2f4c-42d9-bfc1-92c5d82c459a
-Δxh = Lh/Nh # sampling in the source plane
-
-# ╔═╡ de1ef254-c6bc-4c31-ac03-2ee1cf57ed18
-yh = fftpos(Lh, Nh, NDTools.CenterFT);
-
-# ╔═╡ b4b5e6b2-a80f-4dd4-b12e-e991a9bad15a
-sigma = (100e-6/2)/sqrt(2)/Δxh; # sigma for the 100µm (2w0) width of the Gaussian
-
-# ╔═╡ 7330bc0f-d4f5-47a3-b8da-4df91e04f987
-illuh = gaussian((Nh,Nh), sigma=sigma);
-
-# ╔═╡ 047b310a-01f7-45c3-af35-1a5fb1b1a2ad
-z_h = 10e-3; # 1cm propagation distance
-
-# ╔═╡ 4fcd98e4-6980-4716-bd32-ade190e07f20
-Lh / Nh / λh
-
-# ╔═╡ d5369ebe-ac4a-4a70-9ebb-7ac189e85a55
-z_h / Lh
-
-# ╔═╡ d080f246-0c37-45d3-9ea4-b766d908c797
-maxkrel_h = sin(atan(0.5/10)); # 0.5mm spot distance @ 10mm propagation;
-
-# ╔═╡ 794d4546-6b82-4d67-9ea8-265b520cfffe
-function discretize(amp, numlevels=16)
-	 return exp.(1im .* 2pi.*round.((angle.(amp).+2pi)./2pi.*numlevels)./numlevels);
-end
-
-# ╔═╡ 295f3bf2-6353-4927-b418-45c989100c20
-function replace_abs(amp, myabs)
-	return exp.(1im.*angle.(amp)) .* myabs;
-end
-
-# ╔═╡ 92e06b9d-2f6a-4dd2-a6c7-3ea1787655ea
-function get_hologram(λ, y, max_krel)
-	res = zeros(ComplexF64, (size(y,1), size(y,1)));
-	Random.seed!(42);
-	for n = -2:2
-		for m = -2:2
-			res += exp(1im * 2π *rand()) .* exp.(1im .* 2π ./ λ .* (y .* (max_krel*m).+y' .* (max_krel*n)));
-		end
-	end
-	return discretize(res);
-end
-
-# ╔═╡ 18a82e0b-4f69-42f1-b784-96be541173f1
-function local_normalization(ftamp, ftreldist, bs=8)
-	avg_int = 0;
-	new_ft = ftamp .* 0;
-	N = 0;
-	for n = -2:2
-		for m = -2:2
-			mid = size(ftamp).÷2 .+1;
-			k_start = mid .+ round.(Int, size(ftamp) .* ftreldist .* [m,n])
-			roi = @view ftamp[k_start[1]-bs:k_start[1]+bs, k_start[2]-bs:k_start[2]+bs]
-			sum_int = sum(abs2.(roi));
-			avg_int += sum_int;
-			roi_new = @view new_ft[k_start[1]-bs:k_start[1]+bs, k_start[2]-bs:k_start[2]+bs]
-			roi_new .= roi ./ sqrt(sum_int);
-			N+=1;
-		end
-	end
-	avg_int = avg_int/N;
-	new_ft .*= sqrt(avg_int);
-	return new_ft;
-end
-
-# ╔═╡ ec92354b-2cba-49a4-998a-7c6925733200
-function IFTA_hologram(illuh, λ, y, max_krel, steps=50)
-	holo = get_hologram(λ, y, max_krel)
-	Δx = yh[2]-yh[1];
-	ftreldist = maxkrel_h *Δx/λ;
-	sz = size(illuh);
-	mid_region = [sz[1].÷4:(3*sz[1]).÷4, sz[2].÷4:(3*sz[2]).÷4]
-	# obtain a normalized version and define 80% of it as the "goal"
-	ftamp = ft(illuh .* holo);
-	goal_abs_amp = abs.(local_normalization(ftamp, ftreldist)) .* 0.7;
-	goal_abs_amp_view =@view goal_abs_amp[mid_region...]
-	for n=1:steps
-		ftamp = ft(illuh .* holo);
-		mid_view = @view ftamp[mid_region...]
-		mid_view .= replace_abs(mid_view, goal_abs_amp_view)
-		holo = ift(ftamp);
-		holo = discretize(holo);
-	end
-	local_normalization(ft(illuh .* holo), ftreldist);
-	return holo;
-end
-
-# ╔═╡ bd264ae6-4dd3-493e-bd5f-b42444b620dd
-holo = IFTA_hologram(illuh, λh, yh, maxkrel_h, 150);
-
-# ╔═╡ af9c6f62-706b-46df-a68a-8cd4e552e7c4
-U_h = illuh .* holo;
-
-# ╔═╡ bd2457e6-6fca-41cc-b67c-7358912348d7
-simshow(illuh)
-
-# ╔═╡ 61c6b13a-ff42-4eba-97d7-8820e4c59ac5
-simshow(U_h, γ=1)
-
-# ╔═╡ 00540988-e8e7-41cf-92b1-1afc91ea9ac8
-simshow(abs2.(ft(U_h)), γ=1)
-
-# ╔═╡ 35d43276-2ddd-4bed-902c-8d8e705e766a
-local_normalization(ft(U_h),  maxkrel_h *Δxh/λh);
-
-# ╔═╡ 3d7762e1-0c57-471d-86ef-86dcc282a486
-M_h = (1.3277e-3*2)/Lh  # about 6-fold zero padding, needed to make the AS propagated final field agree to the desired area.
-
-# ╔═╡ 67cc47fa-61d0-4dd1-a4cc-1ad7ad33c687
-U_h_padded = select_region(U_h, new_size=round.(Int, size(U_h) .* M_h));
-
-# ╔═╡ 3141c07d-8cb2-4b72-9d89-87a4458af7ee
-@time as_h = angular_spectrum(U_h_padded, z_h, λh, Lh*M_h, pad_factor=2, apply_bandlimit=false);
-
-# ╔═╡ 95bfa1d7-ce87-4fa0-a153-d76021946d44
-int_as = abs2.(as_h[1]);
-
-# ╔═╡ dbbc6bcd-cc3d-4e8f-a987-0aab81729f13
-Lh
-
-# ╔═╡ 05391390-f6ed-4123-a4fe-3e529feaf544
-@time sas_h = scalable_angular_spectrum(U_h, z_h, λh, Lh, bandlimit_border=(0.95, 1));
-
-# ╔═╡ 2b51977e-9257-4c8c-86bf-541f0b3799cd
-int_sas = abs2.(sas_h[1]);
-
-# ╔═╡ 47fa52ab-ce09-4120-a5d6-214f91ae18e6
-@time sas_hnb = scalable_angular_spectrum(U_h, z_h, λh, Lh, apply_bandlimit=false);
-
-# ╔═╡ 9accf8da-5b5a-4b08-b853-d0cec2259bcd
-int_sas_nb = abs2.(sas_hnb[1]);
-
-# ╔═╡ 70a2a5a1-7070-4ab4-8426-fb9e7218c042
-# NumPix_ASPW = M_h*Lh / Δxh * pad_factor
-
-# ╔═╡ 31d5feec-df3e-4e97-b824-eab4cda3b93b
-int_h = abs2.(as_h[1]);
-
-# ╔═╡ 3c56caa8-89ff-4c8d-98d6-614dc1cb43ed
-@time as_hb = angular_spectrum(U_h, z_h, λh, Lh, pad_factor=1, apply_bandlimit=true);
-
-# ╔═╡ 7f8dcada-f408-4c4e-923d-387de4eef636
-int_hb = abs2.(as_hb[1]);
-
-# ╔═╡ ea32264a-2482-4909-8ed3-3a7f8b54cdda
-@time as_hb2 = angular_spectrum(U_h, z_h, λh, Lh, pad_factor=2, apply_bandlimit=true);
-
-# ╔═╡ 7a070377-98ee-4656-92b7-85743a356871
-int_hb2 = abs2.(as_hb2[1]);
-
-# ╔═╡ 199d9441-2e64-4ff6-84ac-9f06ca69dc9c
-@time fr_h = fresnel(U_h, z_h, λh, Lh, skip_final_phase=false)
-
-# ╔═╡ 6f540081-52e5-4ae1-8c56-719b45bd07e0
-fr_h[2].L*1e3
-
-# ╔═╡ e73facc3-d24d-49fc-8536-94dbc5705bc7
-simshow(int_sas, γ=1, cmap=:gray)
-
-# ╔═╡ 366cfdfa-0611-4a3f-9eba-28b7adf04f30
-L_dest = sas_h[2].L*1e3 # field width in mm in the destination plane
-
-# ╔═╡ 881b95cc-1da9-4d61-a594-55b320b14994
-L_dest_Fr = fr_h[2].L * 1e3
-
-# ╔═╡ 281f7278-9525-4896-b91c-87451c6b4992
-simshow(int_as, γ=1, cmap=:gray)
-
-# ╔═╡ abac7af2-f619-4554-9184-489ffbbec3b4
-L_dest_as = Lh * 1e3 # field width in mm in the destination plane
-
-# ╔═╡ 6e9b6bdd-bf91-473f-ab6d-c75ed2e82fa1
-md"# Comparison of Quality metrics
-with the norm according to Asoubar et al.
-
-No padding with AS propagation yields:
-"
-
-# ╔═╡ e8a6256e-b083-4f5c-b58b-5712f2f91b6d
-md"Matsushima suppression (no padding):"
-
-# ╔═╡ 2e5f40b6-92ea-4bd5-b7bc-5b9a2d67e483
-compare(as_hb, as_h)*100 # AS no padding (!)
-
-# ╔═╡ c15c53c5-8cb6-41e9-a6cd-08ab08fa07a7
-compare(as_h, as_hb)*100 # just to compare the other way round
-
-# ╔═╡ e141037c-afae-41de-802f-d4aaadaada32
-md"Matsushima suppression (2x padding):"
-
-# ╔═╡ 21038f44-2f99-4ea5-abf2-81f22f04ef54
-compare(as_hb2, as_h)*100 # AS only 2x padding, but with Matsushima-bandlimit
-
-# ╔═╡ 31c0eb54-f3ad-46f2-be1d-c42e531a4a14
-md"Fresnel propagation (no padding):"
-
-# ╔═╡ f7e2ddff-4561-430d-8fa9-9b2b4384dc57
-compare(fr_h, as_h)*100 # In the paper they claim 145% difference.
-
-# ╔═╡ e449bf56-3d69-4c8e-867d-54fff56755bc
-size(fr_h[1],1) # to double-check whether the size is OK
-
-# ╔═╡ b89b8461-f97d-42e2-bee1-44b8979b8198
-z_h # propagation distance of 1cm, to double-check
-
-# ╔═╡ ea70c9cf-f212-4176-a0aa-6c88b9a2ee9e
-as_h[2].L*1e3 # fieldsize in mm
-
-# ╔═╡ 61d11c3b-0a2c-44b2-982a-4bd9cd03334c
-as_h[2].sampling
-
-# ╔═╡ 5fe99558-6a4a-49a2-9d92-8ad78da3306d
-simshow(abs2.(fr_h[1]))
-
-# ╔═╡ 0b252803-b3fe-4745-9e13-f2e493db1ba8
-simshow(as_h[1])
-
-# ╔═╡ 1a8c6f5c-d9c8-4d09-b88c-5995317c5fa1
-size(as_h[1])
-
-# ╔═╡ 99267895-ba7d-4efb-b994-647d3d6457eb
-simshow(resample_to(sas_h, as_h)[1])
-
-# ╔═╡ 56028dcb-edcc-4abb-b378-d38758767dc2
-simshow(damp_edge_outside_cpx(sas_h[1], (0.2, 0.2))) # looks fine
-
-# ╔═╡ b7722ea3-c47d-4127-8cfc-840834be920d
-md"SAS propagation (2x padding):"
-
-# ╔═╡ d219c3d5-6e68-434c-a2b6-e07111238e75
-# if you change damp_range just a little the metrics varies by orders of magnitude
-compare(sas_h, as_h)*100 # SAS, 2x padding (924x924), resampled
-
-# ╔═╡ e540c671-7361-40e4-83e3-c5bbc3f175bb
-compare(sas_hnb, as_h)*100 # SAS, 2x padding (924x924), resampled
-
-# ╔═╡ 20a00ae2-fa54-4f56-ad1b-2c204fc85d2b
-compare(as_h, sas_hnb)*100 # SAS, 2x padding (924x924), resampled
-
-# ╔═╡ 397c1577-4b79-43a9-8302-2818fbbbff83
-toshow = amp_difference(sas_h, as_h);
-
-# ╔═╡ 8e5166da-961b-404d-bff4-b0db703ff5a4
-maximum(abs.(toshow))
-
-# ╔═╡ 774dcce4-deb8-44f3-a9e6-d3ab7346c48d
-simshow(toshow, γ=0.2, cmap=:gray, set_zero=false)
+# ╔═╡ b29d94eb-6f10-43cf-8d92-5f0768b13a81
+simshow(intensity_difference(sas_circ, as_circ)) 
 
 # ╔═╡ 00000000-0000-0000-0000-000000000001
 PLUTO_PROJECT_TOML_CONTENTS = """
@@ -820,15 +480,14 @@ Colors = "5ae59095-9a9b-59fe-a467-6f913c188581"
 FFTW = "7a1cc6ca-52ef-59f5-83cd-3a7055c09341"
 FourierTools = "b18b359b-aebc-45ac-a139-9c0ccbb2871e"
 ImageIO = "82e4d734-157c-48bb-816b-45c225c6df19"
-ImageQualityIndexes = "2996bd0c-7a13-11e9-2da2-2f5ce47296a9"
 ImageShow = "4e3cecfd-b093-5904-9786-8bbb286a6a31"
 IndexFunArrays = "613c443e-d742-454e-bfc6-1d7f8dd76566"
 Interpolations = "a98d9a8b-a2ab-59e6-89dd-64a1c18fca59"
 NDTools = "98581153-e998-4eef-8d0d-5ec2c052313d"
 Plots = "91a5bcdd-55d7-5caf-9e0b-520d859cae80"
 PlutoUI = "7f904dfe-b85e-4ff6-b463-dae2292396a8"
-Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 TestImages = "5e47fb64-e119-507b-a336-dd2b206d9990"
+View5D = "90d841e0-6953-4e90-9f3a-43681da8e949"
 
 [compat]
 ColorSchemes = "~3.21.0"
@@ -836,7 +495,6 @@ Colors = "~0.12.10"
 FFTW = "~1.7.1"
 FourierTools = "~0.4.2"
 ImageIO = "~0.6.6"
-ImageQualityIndexes = "~0.3.6"
 ImageShow = "~0.3.7"
 IndexFunArrays = "~0.2.6"
 Interpolations = "~0.14.7"
@@ -844,6 +502,7 @@ NDTools = "~0.5.2"
 Plots = "~1.38.16"
 PlutoUI = "~0.7.51"
 TestImages = "~1.7.1"
+View5D = "~0.4.1"
 """
 
 # ╔═╡ 00000000-0000-0000-0000-000000000002
@@ -852,7 +511,7 @@ PLUTO_MANIFEST_TOML_CONTENTS = """
 
 julia_version = "1.9.2"
 manifest_format = "2.0"
-project_hash = "a7db9b1b205997e256188c843ab57fdcc8159cdd"
+project_hash = "09992bde62fc967621626b36e7c022ba82b8133a"
 
 [[deps.AbstractFFTs]]
 deps = ["LinearAlgebra"]
@@ -894,34 +553,6 @@ version = "2.3.0"
 [[deps.ArgTools]]
 uuid = "0dad84c5-d112-42e6-8d28-ef12dabb789f"
 version = "1.1.1"
-
-[[deps.ArrayInterface]]
-deps = ["Adapt", "LinearAlgebra", "Requires", "SparseArrays", "SuiteSparse"]
-git-tree-sha1 = "f83ec24f76d4c8f525099b2ac475fc098138ec31"
-uuid = "4fba245c-0d91-5ea0-9b3e-6abc04ee57a9"
-version = "7.4.11"
-
-    [deps.ArrayInterface.extensions]
-    ArrayInterfaceBandedMatricesExt = "BandedMatrices"
-    ArrayInterfaceBlockBandedMatricesExt = "BlockBandedMatrices"
-    ArrayInterfaceCUDAExt = "CUDA"
-    ArrayInterfaceGPUArraysCoreExt = "GPUArraysCore"
-    ArrayInterfaceStaticArraysCoreExt = "StaticArraysCore"
-    ArrayInterfaceTrackerExt = "Tracker"
-
-    [deps.ArrayInterface.weakdeps]
-    BandedMatrices = "aae01518-5342-5314-be14-df237901396f"
-    BlockBandedMatrices = "ffab5731-97b5-5995-9138-79e8c1846df0"
-    CUDA = "052768ef-5323-5732-b1bb-66c8b64840ba"
-    GPUArraysCore = "46192b85-c4d5-4398-a991-12ede77f4527"
-    StaticArraysCore = "1e83bf80-4336-4d27-bf5d-d5a4f845583c"
-    Tracker = "9f7883ad-71c0-57eb-9f7f-b5c9e6d3789c"
-
-[[deps.ArrayInterfaceCore]]
-deps = ["LinearAlgebra", "SnoopPrecompile", "SparseArrays", "SuiteSparse"]
-git-tree-sha1 = "e5f08b5689b1aad068e01751889f2f615c7db36d"
-uuid = "30b0a656-2188-435a-8636-2ec0e6a096e2"
-version = "0.1.29"
 
 [[deps.Artifacts]]
 uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
@@ -977,12 +608,6 @@ git-tree-sha1 = "43b1a4a8f797c1cddadf60499a8a077d4af2cd2d"
 uuid = "d1d4a3ce-64b1-5f1a-9ba4-7e7e69966f35"
 version = "0.1.7"
 
-[[deps.BitTwiddlingConvenienceFunctions]]
-deps = ["Static"]
-git-tree-sha1 = "0c5f81f47bbbcf4aea7b2959135713459170798b"
-uuid = "62783981-4cbd-42fc-bca8-16325de8dc4b"
-version = "0.1.5"
-
 [[deps.Bzip2_jll]]
 deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "19a35467a82e236ff51bc17a3a44b69ef35185a2"
@@ -999,12 +624,6 @@ deps = ["Artifacts", "Bzip2_jll", "CompilerSupportLibraries_jll", "Fontconfig_jl
 git-tree-sha1 = "4b859a208b2397a7a623a03449e4636bdb17bcf2"
 uuid = "83423d85-b0ee-5818-9007-b63ccbeb887a"
 version = "1.16.1+1"
-
-[[deps.CatIndices]]
-deps = ["CustomUnitRanges", "OffsetArrays"]
-git-tree-sha1 = "a0f80a09780eed9b1d106a1bf62041c2efc995bc"
-uuid = "aafaddc9-749c-510e-ac4f-586e18779b91"
-version = "0.2.2"
 
 [[deps.ChainRulesCore]]
 deps = ["Compat", "LinearAlgebra", "SparseArrays"]
@@ -1096,23 +715,6 @@ git-tree-sha1 = "d05d9e7b7aedff4e5b51a029dced05cfb6125781"
 uuid = "d38c429a-6771-53c6-b99e-75d170b6e991"
 version = "0.6.2"
 
-[[deps.CoordinateTransformations]]
-deps = ["LinearAlgebra", "StaticArrays"]
-git-tree-sha1 = "f9d7112bfff8a19a3a4ea4e03a8e6a91fe8456bf"
-uuid = "150eb455-5306-5404-9cee-2592286d6298"
-version = "0.6.3"
-
-[[deps.CpuId]]
-deps = ["Markdown"]
-git-tree-sha1 = "fcbb72b032692610bfbdb15018ac16a36cf2e406"
-uuid = "adafc99b-e345-5852-983c-f28acb93d879"
-version = "0.3.1"
-
-[[deps.CustomUnitRanges]]
-git-tree-sha1 = "1a3f97f907e6dd8983b744d2642651bb162a3f7a"
-uuid = "dc8bdbbb-1ca9-579f-8c36-e416f6a65cce"
-version = "1.0.2"
-
 [[deps.DataAPI]]
 git-tree-sha1 = "8da84edb865b0b5b0100c0666a9bc9a0b71c553c"
 uuid = "9a962f9c-6df0-11e9-0e5d-c546b8b5ee8a"
@@ -1188,12 +790,6 @@ deps = ["Artifacts", "Bzip2_jll", "FreeType2_jll", "FriBidi_jll", "JLLWrappers",
 git-tree-sha1 = "74faea50c1d007c85837327f6775bea60b5492dd"
 uuid = "b22a6f82-2f65-5046-a5b2-351ab43fb4e5"
 version = "4.4.2+2"
-
-[[deps.FFTViews]]
-deps = ["CustomUnitRanges", "FFTW"]
-git-tree-sha1 = "cbdf14d1e8c7c8aacbe8b19862e0179fd08321c2"
-uuid = "4f61f5a4-77b1-5117-aa51-3ab5ef4ef0cd"
-version = "0.3.2"
 
 [[deps.FFTW]]
 deps = ["AbstractFFTs", "FFTW_jll", "LinearAlgebra", "MKL_jll", "Preferences", "Reexport"]
@@ -1333,12 +929,6 @@ git-tree-sha1 = "129acf094d168394e80ee1dc4bc06ec835e510a3"
 uuid = "2e76f6c2-a576-52d4-95c1-20adfe4de566"
 version = "2.8.1+1"
 
-[[deps.HostCPUFeatures]]
-deps = ["BitTwiddlingConvenienceFunctions", "IfElse", "Libdl", "Static"]
-git-tree-sha1 = "d38bd0d9759e3c6cfa19bdccc314eccf8ce596cc"
-uuid = "3e5b6fbb-0976-4d2c-9146-d79de83f2fb0"
-version = "0.1.15"
-
 [[deps.Hyperscript]]
 deps = ["Test"]
 git-tree-sha1 = "8d511d5b81240fc8e6802386302675bdf47737b9"
@@ -1369,29 +959,11 @@ git-tree-sha1 = "b51bb8cae22c66d0f6357e3bcb6363145ef20835"
 uuid = "c817782e-172a-44cc-b673-b171935fbb9e"
 version = "0.1.5"
 
-[[deps.ImageContrastAdjustment]]
-deps = ["ImageCore", "ImageTransformations", "Parameters"]
-git-tree-sha1 = "0d75cafa80cf22026cea21a8e6cf965295003edc"
-uuid = "f332f351-ec65-5f6a-b3d1-319c6670881a"
-version = "0.3.10"
-
 [[deps.ImageCore]]
 deps = ["AbstractFFTs", "ColorVectorSpace", "Colors", "FixedPointNumbers", "Graphics", "MappedArrays", "MosaicViews", "OffsetArrays", "PaddedViews", "Reexport"]
 git-tree-sha1 = "acf614720ef026d38400b3817614c45882d75500"
 uuid = "a09fc81d-aa75-5fe9-8630-4744c3626534"
 version = "0.9.4"
-
-[[deps.ImageDistances]]
-deps = ["Distances", "ImageCore", "ImageMorphology", "LinearAlgebra", "Statistics"]
-git-tree-sha1 = "b1798a4a6b9aafb530f8f0c4a7b2eb5501e2f2a3"
-uuid = "51556ac3-7006-55f5-8cb3-34580c88182d"
-version = "0.2.16"
-
-[[deps.ImageFiltering]]
-deps = ["CatIndices", "ComputationalResources", "DataStructures", "FFTViews", "FFTW", "ImageBase", "ImageCore", "LinearAlgebra", "OffsetArrays", "Reexport", "SnoopPrecompile", "SparseArrays", "StaticArrays", "Statistics", "TiledIteration"]
-git-tree-sha1 = "d90867cbe037730a73c9a9499b3591eedbe387a0"
-uuid = "6a3955dd-da59-5b1f-98d4-e7296123deb5"
-version = "0.7.5"
 
 [[deps.ImageIO]]
 deps = ["FileIO", "IndirectArrays", "JpegTurbo", "LazyModules", "Netpbm", "OpenEXR", "PNGFiles", "QOI", "Sixel", "TiffImages", "UUIDs"]
@@ -1416,18 +988,6 @@ deps = ["AxisArrays", "ImageAxes", "ImageBase", "ImageCore"]
 git-tree-sha1 = "36cbaebed194b292590cba2593da27b34763804a"
 uuid = "bc367c6b-8a6b-528e-b4bd-a4b897500b49"
 version = "0.9.8"
-
-[[deps.ImageMorphology]]
-deps = ["DataStructures", "ImageCore", "LinearAlgebra", "LoopVectorization", "OffsetArrays", "Requires", "TiledIteration"]
-git-tree-sha1 = "d1dbe4a987f7eea2ccc183720f87f1bea89c5cde"
-uuid = "787d08f9-d448-5407-9aad-5290dd7ab264"
-version = "0.4.4"
-
-[[deps.ImageQualityIndexes]]
-deps = ["ImageContrastAdjustment", "ImageCore", "ImageDistances", "ImageFiltering", "LazyModules", "OffsetArrays", "PrecompileTools", "Statistics"]
-git-tree-sha1 = "bfb3a198ef5c96582b8095f8a6eece8937c8ceb3"
-uuid = "2996bd0c-7a13-11e9-2da2-2f5ce47296a9"
-version = "0.3.6"
 
 [[deps.ImageShow]]
 deps = ["Base64", "ColorSchemes", "FileIO", "ImageBase", "ImageCore", "OffsetArrays", "StackViews"]
@@ -1516,6 +1076,12 @@ deps = ["Dates", "Mmap", "Parsers", "Unicode"]
 git-tree-sha1 = "31e996f0a15c7b280ba9f76636b3ff9e2ae58c9a"
 uuid = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 version = "0.21.4"
+
+[[deps.JavaCall]]
+deps = ["DataStructures", "Dates", "Libdl", "WinReg"]
+git-tree-sha1 = "2ca155cf69fe84e7c77992ce891f98fee93be834"
+uuid = "494afd89-becb-516b-aafa-70d2670c0337"
+version = "0.7.8"
 
 [[deps.JpegTurbo]]
 deps = ["CEnum", "FileIO", "ImageCore", "JpegTurbo_jll", "TOML"]
@@ -1692,21 +1258,6 @@ git-tree-sha1 = "cedb76b37bc5a6c702ade66be44f831fa23c681e"
 uuid = "e6f89c97-d47a-5376-807f-9c37f3926c36"
 version = "1.0.0"
 
-[[deps.LoopVectorization]]
-deps = ["ArrayInterface", "ArrayInterfaceCore", "CPUSummary", "CloseOpenIntervals", "DocStringExtensions", "HostCPUFeatures", "IfElse", "LayoutPointers", "LinearAlgebra", "OffsetArrays", "PolyesterWeave", "PrecompileTools", "SIMDTypes", "SLEEFPirates", "Static", "StaticArrayInterface", "ThreadingUtilities", "UnPack", "VectorizationBase"]
-git-tree-sha1 = "b6b453635656ea4b245d61d354516284d6fc1962"
-uuid = "bdcacae8-1622-11e9-2a5c-532679323890"
-version = "0.12.160"
-
-    [deps.LoopVectorization.extensions]
-    ForwardDiffExt = ["ChainRulesCore", "ForwardDiff"]
-    SpecialFunctionsExt = "SpecialFunctions"
-
-    [deps.LoopVectorization.weakdeps]
-    ChainRulesCore = "d360d2e6-b24c-11e9-a2a3-2a2ae2dbcce4"
-    ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
-    SpecialFunctions = "276daf66-3868-5448-9aa4-cd146d93841b"
-
 [[deps.MIMEs]]
 git-tree-sha1 = "65f28ad4b594aebe22157d6fac869786a255b7eb"
 uuid = "6c6e2e6c-3030-632d-7369-2d6c69616d65"
@@ -1728,11 +1279,6 @@ deps = ["Markdown", "Random"]
 git-tree-sha1 = "42324d08725e200c23d4dfb549e0d5d89dede2d2"
 uuid = "1914dd2f-81c6-5fcd-8719-6d5c9610ff09"
 version = "0.5.10"
-
-[[deps.ManualMemory]]
-git-tree-sha1 = "bcaef4fc7a0cfe2cba636d84cda54b5e4e4ca3cd"
-uuid = "d125e4d3-2237-4719-b19c-fa641b8a4667"
-version = "0.1.8"
 
 [[deps.MappedArrays]]
 git-tree-sha1 = "2dab0221fe2b0f2cb6754eaa743cc266339f527e"
@@ -2015,12 +1561,6 @@ git-tree-sha1 = "0c03844e2231e12fda4d0086fd7cbe4098ee8dc5"
 uuid = "ea2cea3b-5b76-57ae-a6ef-0a8af62496e1"
 version = "5.15.3+2"
 
-[[deps.Quaternions]]
-deps = ["LinearAlgebra", "Random", "RealDot"]
-git-tree-sha1 = "da095158bdc8eaccb7890f9884048555ab771019"
-uuid = "94ee1d12-ae83-5a48-8b1c-48b8ff168ae0"
-version = "0.7.4"
-
 [[deps.REPL]]
 deps = ["InteractiveUtils", "Markdown", "Sockets", "Unicode"]
 uuid = "3fa0cd96-eef1-5676-8a61-b3b8758bbffb"
@@ -2076,17 +1616,6 @@ version = "1.3.0"
 [[deps.SHA]]
 uuid = "ea8e919c-243c-51af-8825-aaa63cd721ce"
 version = "0.7.0"
-
-[[deps.SIMDTypes]]
-git-tree-sha1 = "330289636fb8107c5f32088d2741e9fd7a061a5c"
-uuid = "94e857df-77ce-4151-89e5-788b33177be4"
-version = "0.1.0"
-
-[[deps.SLEEFPirates]]
-deps = ["IfElse", "Static", "VectorizationBase"]
-git-tree-sha1 = "4b8586aece42bee682399c4c4aee95446aa5cd19"
-uuid = "476501e8-09a2-5ece-8869-fb82de89a1fa"
-version = "0.6.39"
 
 [[deps.Scratch]]
 deps = ["Dates"]
@@ -2176,23 +1705,6 @@ git-tree-sha1 = "46e589465204cd0c08b4bd97385e4fa79a0c770c"
 uuid = "cae243ae-269e-4f55-b966-ac2d0dc13c15"
 version = "0.1.1"
 
-[[deps.Static]]
-deps = ["IfElse"]
-git-tree-sha1 = "dbde6766fc677423598138a5951269432b0fcc90"
-uuid = "aedffcd0-7271-4cad-89d0-dc628f76c6d3"
-version = "0.8.7"
-
-[[deps.StaticArrayInterface]]
-deps = ["ArrayInterface", "Compat", "IfElse", "LinearAlgebra", "Requires", "SnoopPrecompile", "SparseArrays", "Static", "SuiteSparse"]
-git-tree-sha1 = "33040351d2403b84afce74dae2e22d3f5b18edcb"
-uuid = "0d7ed370-da01-4f52-bd93-41d350b8b718"
-version = "1.4.0"
-weakdeps = ["OffsetArrays", "StaticArrays"]
-
-    [deps.StaticArrayInterface.extensions]
-    StaticArrayInterfaceOffsetArraysExt = "OffsetArrays"
-    StaticArrayInterfaceStaticArraysExt = "StaticArrays"
-
 [[deps.StaticArrays]]
 deps = ["LinearAlgebra", "Random", "StaticArraysCore", "Statistics"]
 git-tree-sha1 = "832afbae2a45b4ae7e831f86965469a24d1d8a83"
@@ -2270,12 +1782,6 @@ git-tree-sha1 = "03492434a1bdde3026288939fc31b5660407b624"
 uuid = "5e47fb64-e119-507b-a336-dd2b206d9990"
 version = "1.7.1"
 
-[[deps.ThreadingUtilities]]
-deps = ["ManualMemory"]
-git-tree-sha1 = "c97f60dd4f2331e1a495527f80d242501d2f9865"
-uuid = "8290d209-cae3-49c0-8002-c8c24d57dab5"
-version = "0.5.1"
-
 [[deps.TiffImages]]
 deps = ["ColorTypes", "DataStructures", "DocStringExtensions", "FileIO", "FixedPointNumbers", "IndirectArrays", "Inflate", "Mmap", "OffsetArrays", "PkgVersion", "ProgressMeter", "UUIDs"]
 git-tree-sha1 = "8621f5c499a8aa4aa970b1ae381aae0ef1576966"
@@ -2322,11 +1828,6 @@ version = "1.4.2"
 deps = ["Random", "SHA"]
 uuid = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
-[[deps.UnPack]]
-git-tree-sha1 = "387c1f73762231e86e0c9c5443ce3b4a0a9a0c2b"
-uuid = "3a884ed6-31ef-47d7-9d2a-63182c4928ed"
-version = "1.0.2"
-
 [[deps.Unicode]]
 uuid = "4ec0a83e-493e-50e2-b9ac-8f72acf5a8f5"
 
@@ -2359,11 +1860,11 @@ git-tree-sha1 = "ca0969166a028236229f63514992fc073799bb78"
 uuid = "41fe7b60-77ed-43a1-b4f0-825fd5a5650d"
 version = "0.2.0"
 
-[[deps.VectorizationBase]]
-deps = ["ArrayInterface", "CPUSummary", "HostCPUFeatures", "IfElse", "LayoutPointers", "Libdl", "LinearAlgebra", "SIMDTypes", "Static", "StaticArrayInterface"]
-git-tree-sha1 = "b182207d4af54ac64cbc71797765068fdeff475d"
-uuid = "3d5dd08c-fd9d-11e8-17fa-ed2836048c2f"
-version = "0.21.64"
+[[deps.View5D]]
+deps = ["AxisArrays", "Colors", "ImageCore", "JavaCall", "LazyArtifacts", "NDTools", "Serialization", "StaticArrays", "Unitful"]
+git-tree-sha1 = "3b49ed19eb42e94b5cdea6d32f27715243c35034"
+uuid = "90d841e0-6953-4e90-9f3a-43681da8e949"
+version = "0.4.1"
 
 [[deps.Wayland_jll]]
 deps = ["Artifacts", "Expat_jll", "JLLWrappers", "Libdl", "Libffi_jll", "Pkg", "XML2_jll"]
@@ -2376,6 +1877,12 @@ deps = ["Artifacts", "JLLWrappers", "Libdl", "Pkg"]
 git-tree-sha1 = "4528479aa01ee1b3b4cd0e6faef0e04cf16466da"
 uuid = "2381bf8a-dfd0-557d-9999-79630e7b1b91"
 version = "1.25.0+0"
+
+[[deps.WinReg]]
+deps = ["Test"]
+git-tree-sha1 = "808380e0a0483e134081cc54150be4177959b5f4"
+uuid = "1b915085-20d7-51cf-bf83-8f477d6f5128"
+version = "0.3.1"
 
 [[deps.WoodburyMatrices]]
 deps = ["LinearAlgebra", "SparseArrays"]
@@ -2615,21 +2122,19 @@ version = "1.4.1+0"
 # ╠═45dabf95-ede9-46c5-896c-39945a2029e7
 # ╠═83d8201f-6c96-4849-871b-99409abfc5f8
 # ╟─d0e12818-286b-475d-b76b-da777073e72a
-# ╟─b87f5371-13b0-4c73-91fb-8108a5a80a3e
-# ╟─e53711d2-68ed-4712-82ba-c11bc14ffab3
-# ╟─529a3df1-8a18-416e-9730-14eb10302fbb
-# ╟─5d639e0e-bc45-472b-8cb6-b78678671047
-# ╟─b06b3800-df52-4e8b-94b0-6627ab3e3f82
-# ╟─37b1e328-8c6f-4099-ab1f-89f1f09975c8
-# ╟─1f0cdb0e-440a-4bbc-861c-1fd8293fb8c3
-# ╟─5e0cdbd0-41a7-4cdc-9c91-06efe20a4769
-# ╟─7038515e-17a8-4207-9551-4c2ef00a85b1
-# ╟─e05c6882-81f9-4784-ab7e-7a9a8d296b6d
+# ╠═b87f5371-13b0-4c73-91fb-8108a5a80a3e
+# ╠═e53711d2-68ed-4712-82ba-c11bc14ffab3
+# ╠═529a3df1-8a18-416e-9730-14eb10302fbb
+# ╠═37b1e328-8c6f-4099-ab1f-89f1f09975c8
+# ╠═1f0cdb0e-440a-4bbc-861c-1fd8293fb8c3
+# ╠═5e0cdbd0-41a7-4cdc-9c91-06efe20a4769
+# ╠═e05c6882-81f9-4784-ab7e-7a9a8d296b6d
 # ╟─45e9dad4-8f26-45c6-b58e-93d634881f60
 # ╠═adfcc771-e092-4dd3-8ff9-9a940c1c29a3
 # ╟─2c6d0d9b-9617-40d3-859d-4c5de8cafbd7
 # ╠═2177f522-9ccb-4b96-8bd5-92718f0d5cc6
 # ╟─004097d8-1906-4151-a4f3-4be7f7a71434
+# ╠═fdb237d3-5c00-463c-9671-3de7ee3e2bcc
 # ╠═4db3a990-4e5d-4fe7-89cc-4823d1b5b592
 # ╟─c7194950-26ff-4972-81be-1fabf1ba9dcf
 # ╠═fd94ba72-5130-40e8-884c-37899b2f2fa7
@@ -2642,110 +2147,31 @@ version = "1.4.1+0"
 # ╠═5611f23e-8513-4c6d-b2d5-b092bdff21ed
 # ╠═694b3ac0-51e2-46b4-a5ce-8b1a93d6a368
 # ╠═6fa374ce-6953-443a-94a0-9859237fe345
+# ╠═764349e1-3b12-412b-bcdd-ba1bb64bc391
 # ╠═0cd5c3e8-39ca-40be-8fef-17faf7738b45
 # ╠═77f6528c-cf26-465e-a5bd-7bd336e1b4bc
-# ╠═3c7bb832-d0db-4f39-913f-6f36d931f0bc
-# ╠═6af0bc99-4245-44f8-bc45-405f9e56b513
-# ╠═dd434bfd-c14d-4417-922a-01a573c44143
-# ╠═3afb5c51-889f-43e4-9ef8-94bf63a31b6f
+# ╠═ae3b4a2a-d2c1-4e49-8c43-438895fd6d6d
+# ╠═78901c84-c586-475a-8beb-3784616c1970
+# ╠═d057b0e4-b959-4601-9cdf-0c86efa0ceb8
+# ╠═f9bc15d3-ed1c-4994-be3b-2f68c4fe0b7f
+# ╠═0b053090-9b8c-4681-bbb3-7a0312dcc65b
 # ╠═16a40756-2b97-4965-8627-831ecc6de4c8
-# ╠═1e6e8a5a-b757-44a5-9b23-70eb711da252
-# ╠═2e97955f-bed0-41ab-a1c6-d309c5b2b565
-# ╠═5c401fe7-3029-44f7-87cc-5c4f3d6ec58d
-# ╠═c413248c-d082-4580-844f-916597852eb0
+# ╠═dd434bfd-c14d-4417-922a-01a573c44143
+# ╠═5196a182-4a90-48e6-9a0d-f6b27e9859b3
+# ╠═f2be0dce-c586-4cd3-b91d-b26511fad01a
+# ╠═6af0bc99-4245-44f8-bc45-405f9e56b513
+# ╠═3afb5c51-889f-43e4-9ef8-94bf63a31b6f
 # ╠═3524374c-97f0-4cdd-88cd-7ffbdb52834c
-# ╠═45872398-895b-4713-b33a-ca573920efc6
-# ╠═9df1ae34-d976-4513-9704-0f99dacbf01c
 # ╠═b95302c7-0385-46ac-8f53-2e6cf7cecea9
-# ╠═103e1291-2a49-409d-8c53-6edc63de6f2c
+# ╠═b4760cdb-331f-44ac-abf0-f7b8d131fb1e
 # ╠═c4f2b545-cd1d-4ae2-bccb-7a89119ae7df
-# ╟─9a34e78f-8a14-405d-bcb9-7184ba01b767
-# ╟─1815437a-332c-4bc1-9b72-b75cd4b8b653
-# ╠═d623e68d-8cfd-4df8-af30-396097ddc6aa
-# ╠═81c307a0-82d4-4514-8d28-12e12defcea2
-# ╠═01f39e27-8e6a-4056-b496-d6bdf955120f
-# ╠═930bc90e-a55f-4674-a6f8-246efa183520
-# ╠═22812caa-acc6-4a50-bdb0-d43b153c9c9a
-# ╠═840f8832-ee38-4da5-b722-e9022fca3076
-# ╠═af91c034-2f43-4786-aef7-a7bce45ab38e
-# ╠═7b13f72d-6e5d-440b-b080-1301a1560acc
-# ╠═e4bb5e06-0b89-4c27-885f-0d13da6d2ff0
-# ╠═9d78321e-6586-4c31-bec7-279d23c79841
-# ╠═5fde2e0b-4bdb-4bcd-8985-9a0b54cbbf95
-# ╠═dc0ae388-c96d-4e9b-bd1b-0c752ddfa237
-# ╠═b3e31f75-5216-47b5-85b3-026a0321c0a8
-# ╠═4f9aab5a-8c2b-4424-97be-4d4b0ba07b3b
-# ╠═f7874387-fed8-41a9-9b66-3c0847e485b6
-# ╠═d128d0ec-61bd-46a2-a915-e42220cd09cc
-# ╠═ac013a5b-9225-4ce2-9e6a-7d83c94f5aa6
-# ╠═9c46ad96-96ac-4d40-bfec-d146451f1130
-# ╟─2f79966d-86a5-4066-a84e-a128c93247e8
-# ╠═d0841cb8-3b2a-4242-8769-fe9e2bca4915
-# ╠═0e84ef74-2f4c-42d9-bfc1-92c5d82c459a
-# ╠═de1ef254-c6bc-4c31-ac03-2ee1cf57ed18
-# ╠═b4b5e6b2-a80f-4dd4-b12e-e991a9bad15a
-# ╠═7330bc0f-d4f5-47a3-b8da-4df91e04f987
-# ╠═047b310a-01f7-45c3-af35-1a5fb1b1a2ad
-# ╠═4fcd98e4-6980-4716-bd32-ade190e07f20
-# ╠═d5369ebe-ac4a-4a70-9ebb-7ac189e85a55
-# ╠═d080f246-0c37-45d3-9ea4-b766d908c797
-# ╠═b1486e8d-0b5e-4d17-ac74-1f277596a660
-# ╠═794d4546-6b82-4d67-9ea8-265b520cfffe
-# ╠═295f3bf2-6353-4927-b418-45c989100c20
-# ╠═92e06b9d-2f6a-4dd2-a6c7-3ea1787655ea
-# ╠═18a82e0b-4f69-42f1-b784-96be541173f1
-# ╠═ec92354b-2cba-49a4-998a-7c6925733200
-# ╠═bd264ae6-4dd3-493e-bd5f-b42444b620dd
-# ╠═af9c6f62-706b-46df-a68a-8cd4e552e7c4
-# ╠═bd2457e6-6fca-41cc-b67c-7358912348d7
-# ╠═61c6b13a-ff42-4eba-97d7-8820e4c59ac5
-# ╠═00540988-e8e7-41cf-92b1-1afc91ea9ac8
-# ╠═35d43276-2ddd-4bed-902c-8d8e705e766a
-# ╠═3d7762e1-0c57-471d-86ef-86dcc282a486
-# ╠═67cc47fa-61d0-4dd1-a4cc-1ad7ad33c687
-# ╠═3141c07d-8cb2-4b72-9d89-87a4458af7ee
-# ╠═95bfa1d7-ce87-4fa0-a153-d76021946d44
-# ╠═dbbc6bcd-cc3d-4e8f-a987-0aab81729f13
-# ╠═05391390-f6ed-4123-a4fe-3e529feaf544
-# ╠═2b51977e-9257-4c8c-86bf-541f0b3799cd
-# ╠═47fa52ab-ce09-4120-a5d6-214f91ae18e6
-# ╠═9accf8da-5b5a-4b08-b853-d0cec2259bcd
-# ╠═70a2a5a1-7070-4ab4-8426-fb9e7218c042
-# ╠═31d5feec-df3e-4e97-b824-eab4cda3b93b
-# ╠═3c56caa8-89ff-4c8d-98d6-614dc1cb43ed
-# ╠═7f8dcada-f408-4c4e-923d-387de4eef636
-# ╠═ea32264a-2482-4909-8ed3-3a7f8b54cdda
-# ╠═7a070377-98ee-4656-92b7-85743a356871
-# ╠═199d9441-2e64-4ff6-84ac-9f06ca69dc9c
-# ╠═6f540081-52e5-4ae1-8c56-719b45bd07e0
-# ╠═e73facc3-d24d-49fc-8536-94dbc5705bc7
-# ╠═366cfdfa-0611-4a3f-9eba-28b7adf04f30
-# ╠═881b95cc-1da9-4d61-a594-55b320b14994
-# ╠═281f7278-9525-4896-b91c-87451c6b4992
-# ╠═abac7af2-f619-4554-9184-489ffbbec3b4
-# ╟─6e9b6bdd-bf91-473f-ab6d-c75ed2e82fa1
-# ╟─e8a6256e-b083-4f5c-b58b-5712f2f91b6d
-# ╠═2e5f40b6-92ea-4bd5-b7bc-5b9a2d67e483
-# ╠═c15c53c5-8cb6-41e9-a6cd-08ab08fa07a7
-# ╟─e141037c-afae-41de-802f-d4aaadaada32
-# ╠═21038f44-2f99-4ea5-abf2-81f22f04ef54
-# ╟─31c0eb54-f3ad-46f2-be1d-c42e531a4a14
-# ╠═f7e2ddff-4561-430d-8fa9-9b2b4384dc57
-# ╠═e449bf56-3d69-4c8e-867d-54fff56755bc
-# ╠═b89b8461-f97d-42e2-bee1-44b8979b8198
-# ╠═ea70c9cf-f212-4176-a0aa-6c88b9a2ee9e
-# ╠═61d11c3b-0a2c-44b2-982a-4bd9cd03334c
-# ╠═5fe99558-6a4a-49a2-9d92-8ad78da3306d
-# ╠═0b252803-b3fe-4745-9e13-f2e493db1ba8
-# ╠═1a8c6f5c-d9c8-4d09-b88c-5995317c5fa1
-# ╠═99267895-ba7d-4efb-b994-647d3d6457eb
-# ╠═56028dcb-edcc-4abb-b378-d38758767dc2
-# ╠═b7722ea3-c47d-4127-8cfc-840834be920d
-# ╠═d219c3d5-6e68-434c-a2b6-e07111238e75
-# ╠═e540c671-7361-40e4-83e3-c5bbc3f175bb
-# ╠═20a00ae2-fa54-4f56-ad1b-2c204fc85d2b
-# ╠═397c1577-4b79-43a9-8302-2818fbbbff83
-# ╠═8e5166da-961b-404d-bff4-b0db703ff5a4
-# ╠═774dcce4-deb8-44f3-a9e6-d3ab7346c48d
+# ╠═c69655dd-3380-4880-9eef-2bbc91c6933c
+# ╠═5766673b-f1e6-4eeb-acca-4b92b87a9553
+# ╠═cd982add-2a87-4f0b-9701-4c1f5109168e
+# ╠═497d07d1-0e04-4068-890a-076cfa8e7975
+# ╠═d4f91a44-8ad3-4086-aa0d-a7e13abc2f26
+# ╠═0fa8e819-bbf1-4da7-bf05-5a1ca4980193
+# ╠═d2836dff-80a0-4db3-a748-8555bbaed55e
+# ╠═b29d94eb-6f10-43cf-8d92-5f0768b13a81
 # ╟─00000000-0000-0000-0000-000000000001
 # ╟─00000000-0000-0000-0000-000000000002
