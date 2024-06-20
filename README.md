@@ -62,7 +62,8 @@ pip install numpy matplotlib torch notebook
 to run the Python notebook.
 
 # Implementations
-There is an efficient implementation of the Angular Spectrum method and the Scalable Angular Spectrum method in [WaveOpticsPropagation.jl](https://github.com/JuliaPhysics/WaveOpticsPropagation.jl/)
+There is an efficient implementation of the Angular Spectrum method and the Scalable Angular Spectrum method in [WaveOpticsPropagation.jl](https://github.com/JuliaPhysics/WaveOpticsPropagation.jl/).
+There is one JAX implementation in [chromatix](https://github.com/chromatix-team/chromatix).
 
 
 # Bugs, Issues
