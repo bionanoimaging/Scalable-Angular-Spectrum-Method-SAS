@@ -1,4 +1,8 @@
 # Scalable Angular Spectrum Method SAS
+* **Update: Included in [WaveOpticsPropagation.jl](https://github.com/JuliaPhysics/WaveOpticsPropagation.jl)**
+* **Update June 2024: Now included in [chromatix](https://github.com/chromatix-team/chromatix)**
+
+
 Implementations of the Scalable Angular Spectrum (SAS) method for optical wave propagation in Python + PyTorch and Julia Lang.
 The SAS allows to propagate optical waves accurately over long distances and high magnifications. 
 It features a much higher speed than the Angular Spectrum (AS) method and is more precise than the single-step Fresnel (SFT-Fr) method.
